@@ -78,13 +78,24 @@ func _physics_process(delta: float) -> void:
 	# facing rotates well past the slip angle), so chasing the facing makes the camera veer with the
 	# slide. Anchor behind the DIRECTION OF TRAVEL instead (blended by drift_travel_follow) — the
 	# camera stays steady on where you're heading and the car slides sideways in frame.
-	var follow_back := _vehicle.global_transform.basis.z
-	if drift_travel_follow > 0.0 and _vehicle.is_drifting():
-		var vel := _vehicle.velocity
-		var vel_flat := vel - camera_up * vel.dot(camera_up)   # travel direction in the camera's ground plane
-		if vel_flat.length() > 1.0:
-			follow_back = follow_back.lerp(-vel_flat.normalized(), drift_travel_follow).normalized()
-	_smoothed_back = _smoothed_back.lerp(follow_back, delta * 3.0).normalized()
+	# While DRIFTING (car yaws past its slip angle) or doing an AIR TRICK (basis tumbles), chasing
+	# basis.z makes the camera lurch — anchor behind the DIRECTION OF TRAVEL instead. Tricks fully
+	# commit to travel-follow; if the launch is near-vertical (little horizontal travel), hold the
+	# last direction rather than chase the tumbling basis.
+	if _vehicle.is_tricking():
+		var tvel := _vehicle.velocity
+		var tflat := tvel - camera_up * tvel.dot(camera_up)
+		if tflat.length() > 1.0:
+			_smoothed_back = _smoothed_back.lerp(-tflat.normalized(), delta * 3.0).normalized()
+		# else: hold _smoothed_back steady — do not chase the tumbling basis
+	else:
+		var follow_back := _vehicle.global_transform.basis.z
+		if drift_travel_follow > 0.0 and _vehicle.is_drifting():
+			var vel := _vehicle.velocity
+			var vel_flat := vel - camera_up * vel.dot(camera_up)   # travel direction in the camera's ground plane
+			if vel_flat.length() > 1.0:
+				follow_back = follow_back.lerp(-vel_flat.normalized(), drift_travel_follow).normalized()
+		_smoothed_back = _smoothed_back.lerp(follow_back, delta * 3.0).normalized()
 	var desired_pos := _vehicle.global_position + camera_up * (follow_height - _current_dip) + _smoothed_back * active_follow_distance
 	var target_pos := _get_safe_camera_position(_vehicle.global_position, desired_pos)
 	var effective_lag := lerpf(camera_lag * 0.3, camera_lag, speed_ratio)

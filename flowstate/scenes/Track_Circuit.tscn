@@ -1,0 +1,98 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/vehicle/VehiclePhysics.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/vehicle/VehicleController.gd" id="2"]
+[ext_resource type="Script" path="res://scripts/tests/DebugOverlay.gd" id="3"]
+[ext_resource type="Script" path="res://scripts/camera/DynamicCamera.gd" id="4"]
+[ext_resource type="Script" path="res://scripts/vehicle/GravitySystem.gd" id="5"]
+[ext_resource type="Script" path="res://scripts/vehicle/WallRiding.gd" id="6"]
+[ext_resource type="Script" path="res://scripts/systems/FlowSystem.gd" id="7"]
+[ext_resource type="Script" path="res://scripts/vehicle/WallSensor.gd" id="8"]
+[ext_resource type="Script" path="res://scripts/vehicle/WallVFX.gd" id="9"]
+[ext_resource type="Script" path="res://scripts/tests/CircuitBuilder.gd" id="10"]
+[ext_resource type="Script" path="res://scripts/systems/ScoreSystem.gd" id="11"]
+[ext_resource type="Script" path="res://scripts/systems/RunManager.gd" id="12"]
+[ext_resource type="Script" path="res://scripts/systems/PlayHUD.gd" id="13"]
+
+[sub_resource type="Environment" id="env"]
+background_mode = 1
+background_color = Color(0.05, 0.05, 0.08, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.04, 0.04, 0.08, 1)
+ambient_light_energy = 0.3
+
+[sub_resource type="CapsuleShape3D" id="cap"]
+radius = 0.8
+height = 1.6
+
+[sub_resource type="BoxMesh" id="boxmesh"]
+size = Vector3(1.6, 1, 2.4)
+
+[node name="Track_Circuit" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 12, 0)
+light_color = Color(0.8, 0.85, 1, 1)
+light_energy = 0.85
+shadow_enabled = true
+
+[node name="Circuit" type="Node3D" parent="."]
+script = ExtResource("10")
+
+[node name="Vehicle" type="CharacterBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 16)
+script = ExtResource("1")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Vehicle"]
+shape = SubResource("cap")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Vehicle"]
+mesh = SubResource("boxmesh")
+
+[node name="VehicleController" type="Node" parent="Vehicle"]
+script = ExtResource("2")
+
+[node name="GravitySystem" type="Node3D" parent="Vehicle"]
+script = ExtResource("5")
+
+[node name="WallRiding" type="Node" parent="Vehicle"]
+script = ExtResource("6")
+
+[node name="FlowSystem" type="Node" parent="Vehicle"]
+script = ExtResource("7")
+
+[node name="WallSensor" type="Node" parent="Vehicle"]
+script = ExtResource("8")
+
+[node name="WallVFX" type="Node3D" parent="Vehicle"]
+script = ExtResource("9")
+
+[node name="Camera3D" type="Camera3D" parent="Vehicle"]
+transform = Transform3D(1, 0, 0, 0, 0.939693, 0.34202, 0, -0.34202, 0.939693, 0, 3, 6)
+current = true
+script = ExtResource("4")
+vehicle_path = NodePath("..")
+
+[node name="ScoreSystem" type="Node" parent="."]
+script = ExtResource("11")
+
+[node name="RunManager" type="Node" parent="."]
+script = ExtResource("12")
+
+[node name="DebugUI" type="CanvasLayer" parent="."]
+
+[node name="DebugLabel" type="Label" parent="DebugUI"]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 400.0
+offset_bottom = 220.0
+theme_override_font_sizes/font_size = 18
+text = "Debug overlay"
+script = ExtResource("3")
+vehicle_path = NodePath("../../Vehicle")
+
+[node name="PlayHUD" type="CanvasLayer" parent="."]
+script = ExtResource("13")

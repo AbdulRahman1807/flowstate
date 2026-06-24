@@ -6,6 +6,7 @@ signal jumped(jump_direction: Vector3)
 signal clean_landing(impact_velocity: float)   # Perfect landing (angle ~parallel) — consumed by ScoreSystem for flow + style
 signal drift_started
 signal drift_ended
+signal trick_landed(degrees: float, clean: bool)   # Air trick landed — total degrees rotated, clean = landed upright. Consumed by ScoreSystem for style.
 
 @export var max_speed: float = 50.0   # Raised from 22 (which never actually held — see speed-cap fix). Tune live in inspector.
 @export var wall_ride_speed_cap: float = 22.0   # Wall-ride velocity clamps to THIS, not max_speed: the jump-off preserves up-the-wall momentum, so it must stay bounded even when ground top speed is high.
@@ -15,6 +16,7 @@ signal drift_ended
 @export var reverse_acceleration: float = 18.0
 @export var reverse_engage_speed: float = 10.0
 @export var drag: float = 0.08
+@export var stop_speed_threshold: float = 1.0   # Grounded coasting below this (no throttle/brake) snaps to a true stop — drag is multiplicative so it only asymptotes toward 0; without this the car coasts forever at a minute speed
 
 @export var steering_speed: float = 3.5
 @export var high_speed_steering_dampen: float = 0.45
@@ -47,6 +49,24 @@ signal drift_ended
 @export var drift_brake_threshold: float = 0.5   # Brake input above this (with steer) initiates brake-to-drift
 @export var drift_steer_threshold: float = 0.3   # |steer| above this (with brake) initiates brake-to-drift
 
+# Air tricks (010): while AIRBORNE, hold the air-trick key (E / RB) + a direction to rotate —
+# barrel roll (steer), flip (accelerate), spin (no direction). E is air-only, so it never misfires
+# the way brake did. Rotation is orientation-only (momentum preserved, Pillar 1); land upright to score.
+@export var air_trick_rate: float = 360.0          # deg/sec for roll & spin
+@export var air_trick_flip_rate: float = 240.0     # deg/sec for flips (slower — they read as too fast at the roll/spin rate)
+@export var air_trick_min_degrees: float = 180.0   # min accumulated rotation for a landing to count as a trick
+@export var air_trick_clean_dot: float = 0.8       # car-up · surface-normal at landing >= this = clean (landed upright / wheels-down)
+@export var air_trick_facing_dot: float = 0.5      # car-forward · travel at landing >= this = front-first; below = landed facing the wrong way (the car has a fixed front) = a crash
+@export var air_trick_input_threshold: float = 0.3 # |steer| / accelerate above this selects roll / flip (else spin)
+@export var trick_flow_per_360: float = 0.6        # Flow on a clean trick landing, per full 360°
+@export var air_trick_min_airtime: float = 0.25    # Min continuous airtime before a trick can engage — blocks accidental spins on tiny hops / brief airborne moments while braking
+# Botched-orientation landing after a trick = landing on the roof/side = a CRASH (it's a car). The
+# car still auto-rights (Pillar 5: costs momentum, not progress), but bleeds speed + flow scaled by
+# how far from upright it came down. Only evaluated when a trick happened (else slope landings would
+# false-trigger). 0 disables.
+@export var trick_crash_speed_penalty: float = 0.6 # Fraction of speed lost on a full roof landing (scales with how inverted)
+@export var trick_crash_flow_penalty: float = 1.0  # Flow lost on a full roof landing (scales with how inverted)
+
 var _is_grounded: bool = false
 var _boost_active: bool = false
 var _boost_timer: float = 0.0
@@ -57,6 +77,9 @@ var _last_steer: float = 0.0
 var _was_grounded_last_frame: bool = false
 var _is_drifting: bool = false
 var _drift_vel_xz: Vector2 = Vector2.ZERO  # Jolt auto-realigns velocity to facing between frames; this stores intended drift direction
+var _trick_active: bool = false            # an air trick is rotating this frame
+var _trick_rotation_accum: float = 0.0     # degrees rotated since leaving the ground (reset on landing)
+var _airborne_time: float = 0.0            # continuous seconds airborne — gates air-trick engagement
 
 @onready var _vehicle_controller: VehicleController = $VehicleController
 @onready var gravity_system: GravitySystem = $GravitySystem
@@ -74,6 +97,8 @@ func apply_intent(intent: MovementIntent) -> void:
 	var delta := get_physics_process_delta_time()
 	_last_steer = intent.steer
 	var incoming_velocity := velocity  # pre-update velocity; landing impact/angle read from this
+	var incoming_basis_y := global_transform.basis.y  # car-up BEFORE this frame's gravity re-align — air-trick landing reads this
+	var incoming_forward := -global_transform.basis.z  # car-FORWARD before re-align — air-trick landing reads facing (front-first vs rear-first) from this
 
 
 	# 1. Update Gravity System
@@ -82,6 +107,28 @@ func apply_intent(intent: MovementIntent) -> void:
 		_is_grounded = gravity_system.get_state() != GravitySystem.AttachmentState.AIRBORNE
 	else:
 		_is_grounded = is_on_floor()
+
+	# Air-trick state — AIRBORNE only; brake = modifier, direction picks the axis (reuses idle
+	# airborne inputs, no new keybind). Computed before step 2 so the gravity up-align can be
+	# suspended while a trick rotates (otherwise it snaps the car upright every frame, killing it).
+	if _is_grounded:
+		_airborne_time = 0.0
+	else:
+		_airborne_time += delta
+	var _trick_axis := Vector3.ZERO
+	var _trick_dir := 1.0
+	var _trick_rate := air_trick_rate
+	_trick_active = false
+	if not _is_grounded and _airborne_time >= air_trick_min_airtime and intent.air_trick:
+		if absf(intent.steer) > air_trick_input_threshold:
+			_trick_axis = Vector3.FORWARD          # barrel roll around the forward axis
+			_trick_dir = signf(intent.steer)
+		elif intent.accelerate > air_trick_input_threshold:
+			_trick_axis = Vector3.RIGHT            # flip around the lateral axis
+			_trick_rate = air_trick_flip_rate      # flips rotate slower (feel)
+		else:
+			_trick_axis = Vector3.UP               # spin around the up axis
+		_trick_active = true
 
 	# 2. Align vehicle orientation to gravity
 	var gravity_vec := Vector3(0, -gravity_force, 0)
@@ -92,8 +139,21 @@ func apply_intent(intent: MovementIntent) -> void:
 		gravity_up = -gravity_vec.normalized()
 		
 		var current_up := global_transform.basis.y
-		if not current_up.is_equal_approx(gravity_up):
+		# Suspend the up-align while a trick is rotating so the player's rotation holds. It resumes the
+		# moment the trick ends / the car lands. On a grounded TRICK RECOVERY (just landed from a trick)
+		# we fully re-seat the car: upright AND facing its DIRECTION OF TRAVEL — so a tumbled (flip) or
+		# spun-around (spin) car recovers to a drivable forward heading. The car has a fixed front, so
+		# landing inverted/backward is judged a CRASH in step 10 (momentum cost), but control recovers
+		# (Pillar 5). This grounded recovery also covers SPINS, where up is unchanged so the plain
+		# up-align below would skip and leave the car stuck facing backward (janky reverse). Surface-
+		# following (loops) never accrues trick rotation, so it keeps the -basis.z heading exactly as before.
+		var ground_recover := _is_grounded and _trick_rotation_accum > 0.0
+		if not _trick_active and (ground_recover or not current_up.is_equal_approx(gravity_up)):
 			var forward_ref := -global_transform.basis.z
+			if ground_recover:
+				var travel := velocity - gravity_up * velocity.dot(gravity_up)
+				if travel.length() > 1.0:
+					forward_ref = travel.normalized()
 			var right_ref := forward_ref.cross(gravity_up)
 			if right_ref.length_squared() < 0.001:
 				right_ref = global_transform.basis.x
@@ -181,7 +241,13 @@ func apply_intent(intent: MovementIntent) -> void:
 	if absf(signed_forward_speed) > 0.0:
 		var drag_factor := maxf(1.0 - drag * delta, 0.0)
 		signed_forward_speed *= drag_factor
-		
+
+	# Stiction: drag is multiplicative so it only ASYMPTOTES toward zero — the car would coast forever
+	# at a minute speed and never truly stop. When grounded and purely coasting (no throttle, no brake,
+	# not drifting), snap a sub-threshold crawl to a real stop.
+	if _is_grounded and not _is_drifting and intent.accelerate == 0.0 and intent.brake == 0.0 and absf(signed_forward_speed) < stop_speed_threshold:
+		signed_forward_speed = 0.0
+
 	if gravity_system and _is_grounded and gravity_system.get_state() != GravitySystem.AttachmentState.GROUNDED:
 		signed_forward_speed *= maxf(0.0, 1.0 - gravity_system.wall_grip_decay * delta)
 
@@ -216,7 +282,11 @@ func apply_intent(intent: MovementIntent) -> void:
 		else:
 			velocity = forward * signed_forward_speed
 	else:
-		velocity = forward * signed_forward_speed + transform.basis.y * local_up_vel + transform.basis.x * local_right_vel
+		# Air trick: leave world-space velocity untouched (orientation-only). Rebuilding from the
+		# tumbling basis + the clamped signed_forward_speed shrinks velocity whenever forward
+		# anti-aligns with travel (flips/spins) — that corrupted momentum and spiked the FOV.
+		if not _trick_active:
+			velocity = forward * signed_forward_speed + transform.basis.y * local_up_vel + transform.basis.x * local_right_vel
 
 	# 6. Steering
 	if _is_grounded:
@@ -245,6 +315,11 @@ func apply_intent(intent: MovementIntent) -> void:
 			_drift_vel_xz = Vector2(velocity.x, velocity.z)
 		else:
 			velocity = forward * signed_forward_speed
+	elif _trick_active:
+		# Air trick: rotate ORIENTATION ONLY around the trick axis. Do NOT rebuild velocity from the
+		# rotated basis — the car spins/flips but keeps flying the same way (momentum preserved, Pillar 1).
+		rotate_object_local(_trick_axis, _trick_dir * deg_to_rad(_trick_rate) * delta)
+		_trick_rotation_accum += _trick_rate * delta
 	elif intent.steer != 0.0:
 		var speed_ratio := clampf(absf(signed_forward_speed) / max_speed, 0.0, 1.0) if max_speed > 0.0 else 0.0
 		var dampen_factor := lerpf(1.0, high_speed_steering_dampen, speed_ratio)
@@ -309,18 +384,30 @@ func apply_intent(intent: MovementIntent) -> void:
 			if sp > wall_ride_speed_cap:
 				velocity = velocity * (wall_ride_speed_cap / sp)
 
-	# 9. Wall attach / detach
+	# 9. Wall attach / detach / save
 	if intent.wall_attach:
 		if _wall_riding and _wall_riding.is_wall_riding():
 			_wall_riding.try_wall_detach(intent.steer, intent.accelerate, intent.brake)
 			_vehicle_controller.consume_wall_attach()
 		elif _wall_riding:
+			# Ride a glancing wall; if none, try a SAVE — deflect off a wall you're heading into.
 			if _wall_riding._try_attach_to_wall():
+				_vehicle_controller.consume_wall_attach()
+			elif _wall_riding._try_wall_save(intent.steer):
 				_vehicle_controller.consume_wall_attach()
 		intent.wall_attach = false
 
-	_signed_forward_speed = velocity.dot(forward)
-	_current_speed = absf(_signed_forward_speed)
+	if _trick_active:
+		# The forward axis tumbles mid-trick, so its projection is meaningless. Use HORIZONTAL travel
+		# speed (perpendicular to gravity), NOT velocity.length(): the full magnitude grows with the
+		# fall, which made get_speed() spike and the camera FOV lurch during tricks. Horizontal travel
+		# speed is ~constant (momentum is preserved), so the FOV stays calm.
+		var trick_horiz := velocity - gravity_up * velocity.dot(gravity_up)
+		_signed_forward_speed = trick_horiz.length()
+		_current_speed = _signed_forward_speed
+	else:
+		_signed_forward_speed = velocity.dot(forward)
+		_current_speed = absf(_signed_forward_speed)
 
 	# Speed-based flow accumulation (GDD primary trigger) — grounded high-speed driving feeds flow
 	if _is_grounded and is_instance_valid(_flow_system) and max_speed > 0.0:
@@ -363,6 +450,39 @@ func apply_intent(intent: MovementIntent) -> void:
 					penalty_factor = landing_dot * landing_dot * 0.6
 				velocity *= (1.0 - penalty_factor)
 				_current_speed = velocity.length()
+
+		# Air-trick landing. A trick rotates orientation freely, so the car comes down on its WHEELS (clean) or its
+		# ROOF/side (a crash) — it's a car, inverted landings aren't a free reset. Only evaluated when
+		# a trick happened (else an upright landing on a slope would false-trigger). orient_dot: 1 =
+		# wheels-down, 0 = on its side, <0 = on the roof.
+		if _trick_rotation_accum > 0.0 and not is_wall and surface_normal != Vector3.ZERO:
+			var orient_dot := incoming_basis_y.dot(surface_normal)        # 1 wheels-down, <0 roof
+			# Facing: was the car's REAL front (pre-recovery) pointing along travel? The car has a
+			# fixed front — a half-spin that lands you rear-first is NOT a clean drive-away.
+			var facing_dot := 1.0                                         # 1 front-first, <0 rear-first
+			var travel_flat := incoming_velocity - surface_normal * incoming_velocity.dot(surface_normal)
+			if travel_flat.length() > 1.0:
+				facing_dot = incoming_forward.dot(travel_flat.normalized())
+			# Clean needs BOTH wheels-down and front-first (and a full enough rotation).
+			if orient_dot >= air_trick_clean_dot and facing_dot >= air_trick_facing_dot and _trick_rotation_accum >= air_trick_min_degrees:
+				trick_landed.emit(_trick_rotation_accum, true)
+				if is_instance_valid(_flow_system):
+					_flow_system.increase(trick_flow_per_360 * (_trick_rotation_accum / 360.0), "air_trick")
+			else:
+				# Landed on the roof/side OR facing the wrong way = CRASH: bleed momentum + Flow by the
+				# WORSE of the two errors. step-2 still recovers a drivable forward heading so you keep
+				# going (Pillar 5: failure costs momentum, not progress). No trick reward.
+				var orient_sev := clampf((air_trick_clean_dot - orient_dot) / (air_trick_clean_dot + 1.0), 0.0, 1.0)
+				var facing_sev := clampf((air_trick_facing_dot - facing_dot) / (air_trick_facing_dot + 1.0), 0.0, 1.0)
+				var severity := maxf(orient_sev, facing_sev)
+				if severity > 0.0:
+					velocity *= (1.0 - trick_crash_speed_penalty * severity)
+					_current_speed = velocity.length()
+					if is_instance_valid(_flow_system):
+						_flow_system.decrease(trick_crash_flow_penalty * severity, "bad_landing")
+				if _trick_rotation_accum >= air_trick_min_degrees:
+					trick_landed.emit(_trick_rotation_accum, false)
+		_trick_rotation_accum = 0.0
 
 	# 11. move_and_slide()
 	move_and_slide()
@@ -416,6 +536,12 @@ func get_steer_input() -> float:
 
 func is_drifting() -> bool:
 	return _is_drifting
+
+func is_tricking() -> bool:
+	return _trick_active
+
+func get_trick_rotation() -> float:
+	return _trick_rotation_accum
 
 # Direct velocity override — used by wall jump
 func set_vehicle_velocity(new_velocity: Vector3) -> void:

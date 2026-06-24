@@ -26,10 +26,21 @@ extends Node
 @export var flow_on_ceiling_transition: float = 1.0
 @export var near_miss_speed_threshold: float = 6.0
 
+# Wall SAVE / ricochet (verb #3 — "the save"): pressing the wall button while heading INTO a wall
+# you can't ride deflects you off it preserving momentum, instead of crashing. Button-initiated
+# (consistent with v2.0 — no auto-detection).
+@export var wall_save_min_speed: float = 8.0       # need real speed to save (else it's just a stop)
+@export var wall_save_min_approach: float = 0.6    # how head-on the wall must be to count as a save
+@export var wall_save_range: float = 4.0           # save scan range (no sustain → not bound by wall_stick_range)
+@export var wall_save_deflect: float = 1.0         # 0 = pinball reflect; 1 = skim along the wall (dead head-on pops up)
+@export var wall_save_pop: float = 4.0             # small up impulse on a save
+@export var flow_on_wall_save: float = 1.5         # Flow reward — the save is the payoff moment
+
 signal on_wall_attach(entry_speed: float, wall_normal: Vector3)
 signal on_wall_detach(ride_duration: float, exit_speed: float, reason: String)
 signal on_wall_jump(speed_at_jump: float)
 signal on_near_miss()
+signal on_wall_save(speed: float, wall_normal: Vector3)   # verb #3 — deflected off a wall you'd have crashed into
 
 var _is_wall_riding: bool = false
 var _wall_ride_timer: float = 0.0
@@ -161,6 +172,56 @@ func try_wall_detach(steer: float = 0.0, accel: float = 0.0, brake: float = 0.0)
 	emit_signal("on_wall_detach", _wall_ride_timer, current_speed, "player_toggle")
 	_is_wall_riding = false
 	_wall_ride_timer = 0.0
+	return true
+
+# Wall SAVE / ricochet (verb #3). Called on the wall button when there's no ridable (glancing) wall
+# but a wall we're heading INTO is in range. Deflects off it preserving momentum instead of crashing.
+# Button-initiated → respects v2.0 (no auto-detection). Returns true if a save fired.
+func _try_wall_save(steer: float = 0.0) -> bool:
+	if not is_instance_valid(gravity_system) or not is_instance_valid(vehicle_physics) or not is_instance_valid(wall_sensor):
+		return false
+	if _is_wall_riding:
+		return false
+	var state := gravity_system.get_state()
+	if state == GravitySystem.AttachmentState.WALL_LEFT or state == GravitySystem.AttachmentState.WALL_RIGHT or state == GravitySystem.AttachmentState.INVERTED:
+		return false
+
+	var speed := vehicle_physics.velocity.length()
+	if speed < wall_save_min_speed:
+		_log_fail("[Wall] SAVE FAIL: speed %.1f < min %.1f" % [speed, wall_save_min_speed])
+		return false
+
+	var space_state := vehicle_physics.get_world_3d().direct_space_state
+	var normal := wall_sensor.find_wall_for_save(
+		vehicle_physics.global_position, vehicle_physics.velocity, space_state,
+		[vehicle_physics.get_rid()], wall_save_min_approach, wall_save_range)
+	if normal == Vector3.ZERO:
+		_log_fail("[Wall] SAVE FAIL: no oncoming wall in range")
+		return false
+
+	# Deflect off the wall: skim ALONG the surface, preserving speed magnitude. Kept HORIZONTAL —
+	# converting speed into the up-the-wall tangent rocketed the car straight up (floaty, slow to
+	# fall). For a dead head-on (no along-direction) fall back to a horizontal tangent along the wall,
+	# steer picking the side. The ONLY vertical in the launch is the small wall_save_pop hop.
+	var into := vehicle_physics.velocity.dot(normal)
+	var along := vehicle_physics.velocity - normal * into
+	var reflected := vehicle_physics.velocity - 2.0 * normal * into
+	var dir_v := reflected.lerp(along, wall_save_deflect)
+	var dir := Vector3(dir_v.x, 0.0, dir_v.z)                      # horizontal skim — never launch upward
+	if dir.length() < 1.0:
+		var tangent := normal.cross(Vector3.UP)                   # horizontal, along the wall
+		if tangent.length() < 0.01:
+			tangent = Vector3(normal.z, 0.0, -normal.x)           # degenerate guard
+		var side := signf(steer) if absf(steer) > 0.1 else 1.0
+		dir = tangent.normalized() * side
+	dir = dir.normalized()
+	vehicle_physics.velocity = dir * speed + Vector3.UP * wall_save_pop
+	gravity_system.force_airborne()
+
+	if is_instance_valid(flow_system):
+		flow_system.increase(flow_on_wall_save, "wall_save")
+	print("[Wall] SAVE: normal=(%.2f,%.2f,%.2f) speed=%.1f" % [normal.x, normal.y, normal.z, speed])
+	emit_signal("on_wall_save", speed, normal)
 	return true
 
 func _on_gravity_state_changed(new_state: GravitySystem.AttachmentState) -> void:

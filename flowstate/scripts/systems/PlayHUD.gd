@@ -18,6 +18,7 @@ class_name PlayHUD
 @export var idle_alpha: float = 0.35
 @export var flow_bar_width: float = 340.0
 @export var flow_bar_height: float = 20.0
+@export var track_title: String = "FLOWSTATE — CIRCUIT"   # shown on the start/READY screen
 
 # 04_Art_Direction palette
 const COL_CYAN := Color(0.0, 1.0, 0.8)
@@ -36,9 +37,12 @@ var _flow_bar_bg: ColorRect
 var _flow_bar_fill: ColorRect
 var _score_label: Label
 var _timer_label: Label
+var _best_label: Label
+var _start_panel: Control
 var _summary: Control
 var _summary_score: Label
 var _summary_time: Label
+var _summary_best: Label
 var _summary_breakdown: Label
 
 var _flow_idle_timer: float = 999.0
@@ -99,12 +103,25 @@ func _on_score_changed(score: float) -> void:
 
 func _on_run_started() -> void:
 	_summary.visible = false
+	if is_instance_valid(_start_panel):
+		_start_panel.visible = false
 
 
 func _on_run_finished(score: float, time: float) -> void:
 	_summary_score.text = "%d" % int(round(score))
 	_summary_time.text = "TIME   " + _format_time(time)
 	_summary_breakdown.text = _build_breakdown_text()
+	# Personal best (session). NEW BEST! if this run beat it, otherwise show the standing best.
+	if is_instance_valid(_run) and _run.has_best():
+		_best_label.text = "BEST  %d" % int(round(_run.get_best_score()))
+		if _run.was_last_run_best():
+			_summary_best.text = "★ NEW BEST ★"
+			_summary_best.add_theme_color_override("font_color", COL_YELLOW)
+		else:
+			_summary_best.text = "BEST   %d" % int(round(_run.get_best_score()))
+			_summary_best.add_theme_color_override("font_color", COL_WHITE)
+	else:
+		_summary_best.text = ""
 	_summary.visible = true
 
 
@@ -209,6 +226,11 @@ func _build_ui() -> void:
 	_timer_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	tr.add_child(_timer_label)
 
+	# Personal best (session) — appears once a run has been completed.
+	_best_label = _make_label("", 20, COL_YELLOW)
+	_best_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	tr.add_child(_best_label)
+
 	# --- End-of-run summary panel (hidden during play) ---
 	_summary = Control.new()
 	_summary.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -246,6 +268,10 @@ func _build_ui() -> void:
 	_summary_time.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	panel.add_child(_summary_time)
 
+	_summary_best = _make_label("", 28, COL_YELLOW)
+	_summary_best.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel.add_child(_summary_best)
+
 	_summary_breakdown = _make_label("", 22, COL_WHITE)
 	_summary_breakdown.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	panel.add_child(_summary_breakdown)
@@ -253,3 +279,39 @@ func _build_ui() -> void:
 	var prompt := _make_label("Press  R  to restart", 24, COL_MAGENTA)
 	prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	panel.add_child(prompt)
+
+	# --- Start / READY screen (shown until the first run begins) ---
+	_start_panel = Control.new()
+	_start_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_start_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_start_panel)
+
+	var sdim := ColorRect.new()
+	sdim.color = Color(0, 0, 0, 0.62)
+	sdim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	sdim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_start_panel.add_child(sdim)
+
+	var spanel := VBoxContainer.new()
+	spanel.anchor_left = 0.5
+	spanel.anchor_top = 0.5
+	spanel.anchor_right = 0.5
+	spanel.anchor_bottom = 0.5
+	spanel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	spanel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	spanel.alignment = BoxContainer.ALIGNMENT_CENTER
+	spanel.add_theme_constant_override("separation", 12)
+	spanel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_start_panel.add_child(spanel)
+
+	var stitle := _make_label(track_title, 46, COL_CYAN)
+	stitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	spanel.add_child(stitle)
+
+	var sgo := _make_label("▶  ACCELERATE TO START", 30, COL_YELLOW)
+	sgo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	spanel.add_child(sgo)
+
+	var shint := _make_label("WASD drive  ·  Space jump  ·  Q wall  ·  E air-trick  ·  brake+turn drift  ·  R restart", 18, COL_WHITE)
+	shint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	spanel.add_child(shint)

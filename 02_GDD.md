@@ -61,6 +61,14 @@ Design constraints on vehicle behavior:
 - Jump timing is a primary skill expression — launch angle affects next landing
 - Jump from a wall should preserve the wall's velocity direction
 
+### Air Tricks
+- While airborne, the player can perform **barrel roll / flip / spin** (full spec: `010_Air_Tricks.md`).
+- **Air-trick key (E / RB):** a dedicated, air-only button — E + steer = roll, E + accelerate = flip, E alone = spin. (Brake-as-modifier was tried first but misfired in the air — brake is pressed for other reasons.)
+- **Momentum-preserving in the air:** tricks rotate orientation only; they never change velocity mid-flight. The risk is the *landing*.
+- **Land it clean:** you must **complete the rotation** — come down on your **wheels** *and* **facing forward** (the car has a fixed front/rear) to earn **Style + Flow**. Landing on your **roof/side** or **rear-first** (a half-finished trick, e.g. a 180° flip or spin) is a **crash**: the car rights itself and recovers a forward heading so you keep going, but you bleed momentum + Flow scaled by how badly off you were (Pillar 5 — failure costs momentum, not progress).
+- A minimum-airtime gate prevents accidental tricks on tiny hops.
+- Skill expression: timing the rotation so you land flat, and stringing tricks into the run for Style.
+
 ### Boost
 - Short burst of speed
 - Resource-limited or cooldown-limited (to be determined during prototyping)
@@ -71,6 +79,13 @@ Design constraints on vehicle behavior:
 - Wall riding is maintained by speed — slow down and fall off
 - Exit: player can jump off the wall or naturally exit at the wall's edge
 - Entry angle affects exit angle — this is a core skill expression point
+
+### Wall Save (Ricochet)
+- **The "save" — the M5 north star:** heading *into* a wall you can't ride, press the wall button to **deflect off it instead of crashing** (full spec: `011_Wall_Save.md`).
+- **Same wall button, no new input:** the save is a fallback on `wall_attach` — ride a glancing wall if you can, otherwise ricochet off an oncoming one.
+- **Momentum-preserving:** the deflection skims along the wall keeping speed magnitude (only direction rotates), kept low/horizontal with just a small pop — it flows fast into the next move, never a floaty stop.
+- Rewards **Flow + Style** — the save is the payoff moment (Pillars 4 *Make Players Look Cool* + 5 *Failure Costs Momentum, Not Progress*).
+- Skill expression: reading a bad approach and turning a near-crash into your coolest move.
 
 ### Ceiling Traversal
 - Ceiling attachment works the same as wall attachment
@@ -123,6 +138,9 @@ Score = (Base Time Score) × Flow Multiplier + Style Points
 - Wall Ride: bonus per second maintained
 - Gravity Transfer: bonus per transfer
 - Near Miss: bonus per event
+- Drift: bonus per second maintained (M5 — `009_Drift.md`)
+- Air Trick: flat bonus per clean landing (M5 — `010_Air_Tricks.md`)
+- Wall Save: flat bonus per ricochet (M5 — `011_Wall_Save.md`)
 
 Score is shown at end of run and on a local ghost leaderboard. No persistence required for prototype.
 

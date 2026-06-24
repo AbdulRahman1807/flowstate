@@ -57,6 +57,48 @@ func find_best_wall(origin: Vector3, velocity: Vector3, space_state: PhysicsDire
 	return best_normal
 
 
+# Like find_best_wall, but for the SAVE / ricochet (verb #3): returns the wall the player is heading
+# INTO (steep / head-on) that find_best_wall deliberately rejects. Wall-only + range gated, but
+# requires toward_wall >= min_approach (moving into the surface). Scores the most head-on candidate.
+func find_wall_for_save(origin: Vector3, velocity: Vector3, space_state: PhysicsDirectSpaceState3D, exclude: Array[RID] = [], min_approach: float = 0.6, scan_range: float = 4.0) -> Vector3:
+	if velocity.length_squared() < 0.001:
+		return Vector3.ZERO
+
+	var vel_dir := velocity.normalized()
+	var rays := _generate_cone_rays(vel_dir)
+	var best_normal := Vector3.ZERO
+	var best_score := -INF
+
+	for ray_dir in rays:
+		var from := origin
+		var to := origin + ray_dir * scan_range
+		var query := PhysicsRayQueryParameters3D.create(from, to, collision_mask)
+		query.exclude = exclude
+		var result := space_state.intersect_ray(query)
+		if result.is_empty():
+			continue
+
+		var hit_normal: Vector3 = result.normal
+		var hit_distance: float = origin.distance_to(result.position)
+
+		# Wall only (not floor/ceiling)
+		if absf(hit_normal.dot(Vector3.UP)) > 0.55:
+			continue
+		# Only walls we are heading INTO (a save is for an oncoming crash, not a parallel pass)
+		var toward_wall := -vel_dir.dot(hit_normal)
+		if toward_wall < min_approach:
+			continue
+		if hit_distance > scan_range:
+			continue
+
+		# Most head-on wins (the wall you'd actually crash into)
+		if toward_wall > best_score:
+			best_score = toward_wall
+			best_normal = hit_normal
+
+	return best_normal
+
+
 func _generate_cone_rays(center: Vector3) -> Array[Vector3]:
 	var rays: Array[Vector3] = []
 

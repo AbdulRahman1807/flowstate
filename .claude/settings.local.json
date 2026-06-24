@@ -45,7 +45,15 @@
       "Bash(/Applications/Godot.app/Contents/MacOS/Godot --headless --script res://scripts/tests/_ReverseDriftBugProbe.gd)",
       "Bash(grep -vE \"^$|Godot Engine|is_inside_tree|GDScript backtrace|\\\\[0\\\\] _initialize\")",
       "Bash(grep -vE \"^$|Godot Engine|is_inside_tree|GDScript backtrace|\\\\[0\\\\] _initialize|get_global_transform\")",
-      "Bash(/Applications/Godot.app/Contents/MacOS/Godot --headless --script res://scripts/tests/_DriftCamProbe.gd)"
+      "Bash(/Applications/Godot.app/Contents/MacOS/Godot --headless --script res://scripts/tests/_DriftCamProbe.gd)",
+      "Bash(/Applications/Godot.app/Contents/MacOS/Godot --headless --script res://scripts/tests/_AirTrickProbe.gd)",
+      "Bash(grep -vE \"^$|Godot Engine|is_inside_tree|GDScript backtrace|\\\\[0\\\\] _initialize|\\\\[1\\\\] _initialize|get_global_transform\")",
+      "Bash(/Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/abdul/Desktop/flowstate/flowstate --script res://scripts/tests/_AirTrickProbe.gd)",
+      "Bash(/Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/abdul/Desktop/flowstate/flowstate --script res://scripts/tests/_ReverseProbe.gd)",
+      "Bash(/Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/abdul/Desktop/flowstate/flowstate --script res://scripts/tests/_PlaygroundSmoke.gd)",
+      "Bash(grep -ivE \"Godot Engine|^$\")",
+      "Bash(/Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/abdul/Desktop/flowstate/flowstate --script res://scripts/tests/_TrickFovProbe.gd)",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }

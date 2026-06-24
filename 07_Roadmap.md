@@ -96,12 +96,14 @@ Tasks:
 ## Milestone 5 — MVP Validation
 **Goal:** The game's core promise is validated.
 
+> **M5 reframe (in progress).** M4 proved the scoring loop but the core *execution* wasn't fun (dev: "track too simple AND moveset too simple"), so M5 was reframed to **deepen the moveset + environment until stylish trick-flow is pullable → then validate → then VFX.** North star = **"the save."** Moveset deepening is **done + dev feel-confirmed (2026-06-23)**: drift (`009`), air tricks (`010`), wall save (`011`), plus the `Test_Playground` bed. **Ghost replay + session personal best now built too** (`012_Replay_Ghost.md`); 21 probes green. What remains: the **VFX pass** (dev-parked, sequenced last) and the **external-tester exit**. See `CLAUDE.md` › Current Milestone.
+
 Tasks:
-- Ghost replay operational
-- Local personal best stored
-- VFX pass: speed lines, particle trails, boost effect
-- Camera impact response on landing
-- Rough style point events (perfect landing, near miss)
+- Ghost replay operational — *built (`012_Replay_Ghost.md`) — deterministic, inputs-only, race-your-best ghost*
+- Local personal best stored — *built (`012`) — session/in-memory (prototype has no persistence per `01_PRD`)*
+- VFX pass: speed lines, particle trails, boost effect — *specced in `013`–`016`; sequenced: vehicle art → track baseline → scratch audio → VFX (ComicPostFX + EventPopups)*
+- Camera impact response on landing — *done — landing dip in `DynamicCamera`*
+- Rough style point events (perfect landing, near miss) — *done (`ScoreSystem`)*
 
 **Exit Condition:** At least one external tester (not the developer) restarts the track multiple times voluntarily. At least one replay moment produces genuine surprise or excitement.
 
@@ -125,6 +127,8 @@ Nothing in this list should be referenced in any code, scene, or design document
 
 ```
 [ M0 Foundation ] → [ M1 Ground ] → [ M2 Gravity ] → [ M3 Walls ] → [ M4 Full Run ] → [ M5 Validated ]
-       ↑
-   You are here
+                                                                                              ↑
+                                                                                          You are here
 ```
+
+M0–M4 are passed. **On M5 — moveset + validation loop (ghost replay, personal best) built and probe-green; only the VFX pass (dev-parked) + the external-tester gate remain** (see the M5 reframe note below and `CLAUDE.md` › Current Milestone).

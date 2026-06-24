@@ -27,6 +27,8 @@ signal on_score_changed(score: float)
 @export var drift_points_per_sec: float = 100.0   # Style points per second while drifting (flow for drift is already added by VehiclePhysics — do NOT also add flow here, per the no-double-count note above)
 @export var gravity_transfer_points: float = 500.0
 @export var near_miss_points: float = 150.0
+@export var air_trick_points_per_360: float = 400.0   # Style on a CLEAN air-trick landing, per full 360° (flow owned by VehiclePhysics — no double-count)
+@export var wall_save_points: float = 350.0           # Style on a wall save / ricochet (flow owned by WallRiding — no double-count)
 
 # --- Flow amounts for the NEW triggers this node owns (the others live in their physics scripts) ---
 @export var flow_on_perfect_landing: float = 0.8
@@ -68,8 +70,10 @@ func _ready() -> void:
 
 	if is_instance_valid(_vehicle):
 		_vehicle.clean_landing.connect(_on_clean_landing)
+		_vehicle.trick_landed.connect(_on_trick_landed)
 	if is_instance_valid(_wall_riding):
 		_wall_riding.on_near_miss.connect(_on_near_miss)
+		_wall_riding.on_wall_save.connect(_on_wall_save)
 	if is_instance_valid(_gravity):
 		_gravity.on_state_changed.connect(_on_gravity_state_changed)
 
@@ -147,12 +151,29 @@ func _on_clean_landing(_impact: float) -> void:
 	on_score_changed.emit(_score)
 
 
+# Air trick landed (VehiclePhysics owns the trick Flow; this only adds Style). Botched (off-axis)
+# landings score nothing — Pillar 5: failure costs the reward opportunity, not progress.
+func _on_trick_landed(degrees: float, clean: bool) -> void:
+	if not _running or not clean:
+		return
+	_add_style_internal(air_trick_points_per_360 * (degrees / 360.0), "air_trick")
+	on_score_changed.emit(_score)
+
+
 func _on_near_miss() -> void:
 	if not _running:
 		return
 	_add_style_internal(near_miss_points, "near_miss")
 	if is_instance_valid(_flow):
 		_flow.increase(flow_on_near_miss, "near_miss")
+	on_score_changed.emit(_score)
+
+
+# Wall save / ricochet (verb #3). WallRiding owns the Flow; this only adds Style.
+func _on_wall_save(_speed: float, _normal: Vector3) -> void:
+	if not _running:
+		return
+	_add_style_internal(wall_save_points, "wall_save")
 	on_score_changed.emit(_score)
 
 

@@ -31,6 +31,11 @@ enum RunState { READY, RUNNING, FINISHED }
 @export var checkpoint_group: String = "checkpoints"
 @export var checkpoint_flow_bonus: float = 1.5      # Flow granted each time you cross a NEW checkpoint (the "blue slabs" pop your flow)
 
+# --- Ghost replay (M5) ---
+@export var enable_ghost: bool = true                   # Spawn a ghost replaying your best run so far
+@export var ghost_color: Color = Color(0.0, 1.0, 0.8)   # 04_Art_Direction cyan
+@export var ghost_alpha: float = 0.35
+
 var _vehicle: VehiclePhysics
 var _flow: FlowSystem
 var _gravity: GravitySystem
@@ -41,6 +46,17 @@ var _time: float = 0.0
 var _checkpoint_index: int = -1
 var _start_xform: Transform3D = Transform3D.IDENTITY
 var _respawn_xform: Transform3D = Transform3D.IDENTITY
+
+# Replay / personal best (M5) — all in-memory (01_PRD: no persistence at prototype stage).
+var _controller: VehicleController
+var _recorder: ReplayRecorder
+var _ghost: CharacterBody3D
+var _best_replay: ReplayData
+var _last_replay: ReplayData              # the run you just drove (ghost source when there's no finish line)
+var _has_best: bool = false
+var _best_score: float = 0.0
+var _best_time: float = 0.0
+var _last_run_was_best: bool = false
 
 
 func _ready() -> void:
@@ -54,6 +70,11 @@ func _ready() -> void:
 	if is_instance_valid(_vehicle):
 		_start_xform = _vehicle.global_transform
 		_respawn_xform = _start_xform
+		# Wire the replay recorder into the player's controller (records inputs each frame).
+		_controller = _vehicle.get_node_or_null("VehicleController") as VehicleController
+		if is_instance_valid(_controller):
+			_recorder = ReplayRecorder.new()
+			_controller.replay_recorder = _recorder
 
 	# Markers are built by TrackBuilder during ITS _ready; collect them after the
 	# current frame so scene-tree order doesn't matter.
@@ -121,6 +142,12 @@ func _begin_run() -> void:
 		_flow.reset()
 	if is_instance_valid(_score):
 		_score.start_run()
+	# Record this run (inputs only) from the current start state.
+	if _recorder != null and is_instance_valid(_vehicle):
+		_recorder.start_recording(_vehicle.global_transform, _vehicle.velocity)
+	# Race a ghost: your best run if you've finished one, else your last run — so free-roam scenes
+	# with no finish line (e.g. Test_Playground) still replay: drive, press R, race your last run.
+	_spawn_ghost(_best_replay if _has_best else _last_replay)
 	on_run_started.emit()
 
 
@@ -129,6 +156,20 @@ func _finish_run() -> void:
 	if is_instance_valid(_score):
 		_score.stop_run()
 	var final_score := _score.get_score() if is_instance_valid(_score) else 0.0
+
+	# Capture this run's recording and update the session personal best (in-memory only).
+	_last_run_was_best = false
+	if _recorder != null and _recorder.is_recording():
+		var data := _recorder.stop_recording()
+		data.score = final_score
+		data.time = _time
+		if not _has_best or final_score > _best_score:
+			_has_best = true
+			_best_score = final_score
+			_best_time = _time
+			_best_replay = data
+			_last_run_was_best = true
+	_free_ghost()
 	on_run_finished.emit(final_score, _time)
 
 
@@ -147,6 +188,12 @@ func _respawn() -> void:
 
 
 func _restart() -> void:
+	# Save the run you just drove as the "last run" so its ghost races you next — this is what makes
+	# replay work WITHOUT a finish line (free-roam scenes like the playground).
+	if _recorder != null and _recorder.is_recording():
+		var data := _recorder.stop_recording()
+		if not data.is_empty():
+			_last_replay = data
 	if is_instance_valid(_vehicle):
 		_vehicle.global_transform = _start_xform
 		_vehicle.set_vehicle_velocity(Vector3.ZERO)
@@ -162,6 +209,59 @@ func _upright_facing_neg_z(pos: Vector3) -> Transform3D:
 	return Transform3D(Basis.IDENTITY, pos)
 
 
+# --- Ghost replay (M5) ---
+func _free_ghost() -> void:
+	if is_instance_valid(_ghost):
+		_ghost.queue_free()
+	_ghost = null
+
+
+# Spawn a ghost that re-simulates the recording. It's a duplicate of the player vehicle whose
+# controller replays the recorded inputs (inputs only, re-run from the recorded start state).
+# Defensive: any failure here must NOT break the run loop — the ghost is a visual layer on top.
+func _spawn_ghost(data: ReplayData) -> void:
+	_free_ghost()
+	if not enable_ghost or data == null or data.is_empty() or not is_instance_valid(_vehicle):
+		return
+	var parent := _vehicle.get_parent()
+	if parent == null:
+		return
+	var ghost := _vehicle.duplicate() as CharacterBody3D
+	if ghost == null:
+		return
+	ghost.name = "GhostVehicle"
+	# Strip the camera (current=true would steal the view) and the VFX from the ghost.
+	for child_name in ["Camera3D", "WallVFX"]:
+		var c := ghost.get_node_or_null(child_name)
+		if c != null:
+			ghost.remove_child(c)
+			c.free()
+	# Collision: follow the same geometry (mask) but be invisible to the player and the run
+	# Area3Ds — layer 0 means nothing collides into it, no ray hits it, no Area detects it.
+	ghost.collision_layer = 0
+	ghost.collision_mask = _vehicle.collision_mask
+	# The ghost's controller replays the recording and does NOT record.
+	var gc := ghost.get_node_or_null("VehicleController") as VehicleController
+	if is_instance_valid(gc):
+		gc.replay_recorder = null
+		gc.set_replay(data)
+	# Translucent ghost look.
+	var mesh := ghost.get_node_or_null("MeshInstance3D") as MeshInstance3D
+	if is_instance_valid(mesh):
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(ghost_color.r, ghost_color.g, ghost_color.b, ghost_alpha)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.emission_enabled = true
+		mat.emission = ghost_color
+		mat.emission_energy_multiplier = 0.6
+		mesh.material_override = mat
+	parent.add_child(ghost)
+	ghost.global_transform = data.start_transform
+	if ghost.has_method("set_vehicle_velocity"):
+		ghost.set_vehicle_velocity(data.start_velocity)
+	_ghost = ghost
+
+
 # --- Getters (HUD reads these per-frame) ---
 func get_time() -> float:
 	return _time
@@ -173,3 +273,19 @@ func get_state() -> RunState:
 
 func get_checkpoint_index() -> int:
 	return _checkpoint_index
+
+
+func has_best() -> bool:
+	return _has_best
+
+
+func get_best_score() -> float:
+	return _best_score
+
+
+func get_best_time() -> float:
+	return _best_time
+
+
+func was_last_run_best() -> bool:
+	return _last_run_was_best

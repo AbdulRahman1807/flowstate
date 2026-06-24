@@ -24,6 +24,13 @@ All `.md` files in the project root are authoritative design and architecture do
 | `004_Wall_Riding.md` | Full spec for wall riding (v2.0, button-initiated) |
 | `005_Surface_Following.md` | Continuous surface following (Phase 1 implemented; Phase 2 centrifugal opt-in) |
 | `009_Drift.md` | Brake-to-drift spec (M5 trick-flow verb #1) — implemented, dev feel-confirmed |
+| `010_Air_Tricks.md` | Air tricks spec (M5 trick-flow verb #2) — roll/flip/spin, implemented + probe-green, dev feel-confirmed |
+| `011_Wall_Save.md` | Wall save / ricochet spec (M5 trick-flow verb #3, the "save" north star) — implemented + probe-green, dev feel-confirmed |
+| `012_Replay_Ghost.md` | Ghost replay + session personal best spec (M5 MVP-validation tail) — implemented + probe-green (deterministic, inputs-only) |
+| `013_Vehicle_Art.md` | Vehicle visual design — mesh sourcing (Blender MCP / CC0 / primitives), materials, `VehicleVisuals.gd` speed-reactive emissives |
+| `014_Track_Visual_Baseline.md` | Dark environment + emissive cyan edge lines — substrate for VFX pass; CircuitBuilder/PlaygroundBuilder material overhaul |
+| `015_Audio_Scratch.md` | Scratch audio system — `VehicleAudio.gd`, synthesised tones via AudioStreamGenerator, all signal hookpoints |
+| `016_VFX_Pass.md` | Full VFX pass — ComicPostFX wiring, `ComicPostFXDriver` Flow/speed reactivity, speed lines shader, `EventPopups` comic onomatopoeia HUD |
 
 ---
 
@@ -35,12 +42,14 @@ This is a **Godot 4.6** project located in the `flowstate/` subdirectory. Open i
 godot --editor flowstate/project.godot
 ```
 
-The main scene is `scenes/Track_Prototype.tscn`. Individual system test scenes live in `scenes/tests/`:
+**`scenes/Track_Circuit.tscn` (M5) is the main scene + the proper directional course** — a long (~1.4k units, 10 checkpoints) clearly-channelled start→finish track (continuous side barriers + forward arrow chevrons so the racing line is unmistakable). Built by `CircuitBuilder.gd` with a cursor (a `Transform3D` advanced piece by piece, so everything chains at any heading); sections: speed straights, sweeping turns, launch humps (air), drift chicanes, two real 360° **LOOPS** (`_real_loop` — jump into the circle to ride it fully inverted at speed, then drive out; the pure vertical circle drives perfectly, and the low front/back slabs that would block the entry are CUT so you launch in and roll out under the cut front — no re-loop), wall-ride walls, wall-to-wall **HOP corridors**, and wall-jump-across-**GAP** sections, ending in a finish plaza. Recovery floor is sized to the course bounds after layout. Wired with the full run loop (`RunManager`/`ScoreSystem`/`PlayHUD`), a START/READY screen, an end-of-run summary, and ghost replay + personal best. (`scenes/Track_Prototype.tscn` is the older M4 track.) Individual system test scenes live in `scenes/tests/`:
 
 - `Test_GroundMovement.tscn` — flat track for movement/steering validation
 - `Test_GravityTransition.tscn` — **M2 verification:** a smooth floor→wall→ceiling half-loop (built procedurally by `M2TransitionBuilder.gd`, single seamless ribbon, 005 Phase-1 continuous-follow — drive in fast and it carries you up the wall and onto the inverted ceiling). Recovery floor below. Verified by `_M2Probe.gd`.
 - `Test_CameraResponse.tscn` — camera behaviour with debug overlay
 - `Test_WallRiding.tscn` — wall riding and detachment
+- `Test_Drift.tscn` — 96×96 drift arena (perimeter walls, pillars, ramps) for drift + air-trick feel
+- `Test_Playground.tscn` — **big free-roam moveset bed:** effectively-infinite floor + ramp garden, quarter-pipe kicker, wall-ride wall, wall-hop corridor, floor→wall→ceiling half-loop, pillar slalom (built by `PlaygroundBuilder.gd`). Debug overlay shows drift / air-trick / last-trick / flow. Use this to exercise the whole moveset. **Has a `RunManager` (M5):** auto-starts on throttle; **R** teleports you to spawn and races the **ghost of your last run** (free-roam ghost — no finish line needed; `012_Replay_Ghost.md`).
 
 **Physics engine:** Jolt Physics (set in `project.godot`). Default world gravity is `0.0` — gravity is fully managed by `GravitySystem.gd`.
 
@@ -104,9 +113,15 @@ These are not up for re-evaluation without flagging it first.
 
 **Wall-ride speed is capped to `wall_ride_speed_cap` (= 22), not `max_speed`.** While in a WALL state, velocity is clamped each frame so a fast or boosted entry can't fling the jump-off. This cap is deliberately decoupled from ground `max_speed`: the jump-off preserves up-the-wall momentum, so it must stay bounded even when ground top speed is high (raising `max_speed` to 50 re-broke the floaty jump-off until this was decoupled). Keeps wall jump-offs consistent.
 
+**The grounded car comes to a TRUE stop.** Drag is multiplicative (`signed_forward_speed *= 1 - drag*delta`), so it only *asymptotes* toward zero — the car would coast forever at a minute speed. `stop_speed_threshold` (1.0 m/s) snaps a sub-threshold coast to zero when grounded with no throttle/brake and not drifting. (Gated to coasting only, so it never blocks brake-to-reverse passing through 0.) A replaying ghost likewise stops dead at the end of its recording.
+
 **Drift is brake-to-drift — no dedicated drift key.** Holding `brake` while steering hard (`brake > drift_brake_threshold` and `|steer| > drift_steer_threshold`) at speed initiates a slide instead of slowing; the old `drift` input action (E / RB) was removed from `project.godot`. While `_is_drifting`, the brake's deceleration/reverse is suppressed so the drift preserves momentum (Pillar 1) — brake only slows/reverses when NOT drifting (steer below threshold). Do not re-add a separate drift button. (`MovementIntent.drift` remains only as a programmatic/explicit override; no input is wired to it.) Full spec: `009_Drift.md`.
 
-**Replay records inputs only**, not positions. Playback reruns physics from the same starting state.
+**Air tricks use a dedicated air-only key (`air_trick` = E / RB).** While AIRBORNE (and past `air_trick_min_airtime`): E+steer = barrel roll, E+accelerate = flip, E alone = spin. (Brake-as-modifier was tried first and removed — brake is pressed for other reasons, so it misfired tricks in the air.) Rotation is **orientation-only** — never rebuild velocity from the rotated basis (momentum preserved). The gravity up-align (VehiclePhysics step 2) is **suspended while a trick rotates**, else it snaps the car upright every frame. Flips use a slower `air_trick_flip_rate`. Clean landing = car upright vs surface at touchdown (`air_trick_clean_dot`) → `trick_landed(degrees, clean)` → Flow (VehiclePhysics) + Style (ScoreSystem, no double-count). `GravitySystem._detect_surface_normal()` has a **world-down ray fallback** so a tumbling car still lands. Full spec: `010_Air_Tricks.md`.
+
+**Wall save / ricochet reuses the wall button — no dedicated save key (verb #3, "the save").** Pressing `wall_attach` (Q / LB) is routed in `VehiclePhysics` step 9: detach if riding, else ride a glancing wall (`_try_attach_to_wall`), **else `_try_wall_save(steer)`** off an oncoming wall you'd have crashed into. The save **deflects/skims along the wall preserving speed magnitude**, kept HORIZONTAL with only a small `wall_save_pop` up (converting speed into the up-the-wall tangent rocketed the car straight up — rejected). Button-initiated only (never auto-detected — respects wall riding v2.0). Detection is a dedicated `WallSensor.find_wall_for_save()` (oncoming wall, `wall_save_min_approach`, `wall_save_range`) decoupled from the sustain range (a save doesn't attach). Reward: Flow (`flow_on_wall_save`, owned by WallRiding) + flat Style (`wall_save_points`, ScoreSystem, no double-count) → `on_wall_save`. Full spec: `011_Wall_Save.md`.
+
+**Replay records inputs only**, not positions. Playback reruns physics from the same starting state. **Implemented (M5):** `ReplayRecorder` / `ReplayData` capture the per-frame `MovementIntent`; the ghost is a runtime `duplicate()` of the vehicle whose `VehicleController` replays the stream (`set_replay`) — deterministic (probe end-drift 0.0), `collision_layer = 0` so it follows the track but is invisible to the player / run Area3Ds, camera + VFX stripped. `RunManager` keeps a **session** personal best (in-memory — no persistence, per `01_PRD`) and spawns a ghost each run (best run if you've finished one, else your last run — so free-roam scenes with no finish line still replay); `PlayHUD` shows BEST / NEW BEST. A ghost **stops dead** at the end of its recording (velocity zeroed, no further intents → frozen where the run ended), never coasting on. Full spec: `012_Replay_Ghost.md`.
 
 ---
 
@@ -138,7 +153,11 @@ Run every proposal through these. Two or more failures = cut it.
 
 M0–M4 are done. **M4 closed 2026-06-19** — Flow + Score + RunManager + HUD + first track built and dev-validated (incl. the end-of-run screen); wall jump-off feel fixed (sideways + float) and the flow economy rebalanced; import clean, 16/16 probes green. (Plan was `M4_PLAN.md`; task specs `006_Scoring.md`, `007_Run_Lifecycle.md`, `008_HUD.md`.)
 
-**Now on M5 — reframed.** M4 proved the scoring *loop* works, but the core *execution* isn't fun yet (dev: "track too simple AND moveset too simple"), so M5 is: **deepen the moveset + environment until stylish trick-flow is pullable → then validate → then the comic VFX.** North star = **"the save"** (turn a near-crash into your coolest move). **Starting with DRIFT, feel-first.** Full plan + session pickup point: the `m5_trickflow_direction` memory. (Comic VFX `ComicPostFX` stays parked; see `vfx_sources`.)
+**Now on M5 — reframed.** M4 proved the scoring *loop* works, but the core *execution* wasn't fun yet (dev: "track too simple AND moveset too simple"), so M5 is: **deepen the moveset + environment until stylish trick-flow is pullable → then validate → then the comic VFX.** North star = **"the save"** (turn a near-crash into your coolest move). Full plan + session pickup point: the `m5_trickflow_direction` memory.
+
+**Moveset deepening DONE + dev feel-confirmed (2026-06-23).** All three trick-flow verbs are implemented and probe-green — **drift** (verb #1, `009`), **air tricks** roll/flip/spin (verb #2, `010`), **wall save / ricochet** (verb #3, `011`, the "save" north star) — plus the `Test_Playground` moveset bed. 19 probes green. Dev drive-tested the moveset and confirmed it **feels good** (the reframed-M5 "is stylish trick-flow pullable/fun?" check is dev-satisfied).
+
+**M5 validation loop now BUILT (2026-06-23).** Ghost replay + session personal best are implemented + probe-green (`012_Replay_Ghost.md`): deterministic inputs-only replay, race-your-best-run ghost, BEST / ★ NEW BEST ★ on the HUD. Camera landing-impact (DynamicCamera dip) and style events (ScoreSystem) were already done. So **every implementable M5 build task is complete — 21 probes green.** The ONLY remaining M5 items are not code I can close: **(1) the VFX pass — deliberately dev-parked and reframe-sequenced LAST** (comic `ComicPostFX` + disabled `WallVFX`; see `vfx_sources`) — the dev's timing call; and **(2) the human exit gate** — `07_Roadmap` requires an EXTERNAL tester (not the dev) to voluntarily restart + a replay moment that genuinely excites. Build side of M5 = done; what's left is a playtest + the VFX go/no-go.
 
 ---
 

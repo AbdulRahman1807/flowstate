@@ -193,6 +193,17 @@ func _detect_surface_normal() -> Vector3:
 	var result := space_state.intersect_ray(query)
 	if not result.is_empty():
 		return result.normal
+	# Second fallback: cast straight down in WORLD space. The primary ray follows the car's own up
+	# axis, which points the wrong way when the car is tilted/upside-down mid air-trick, so it would
+	# miss the floor and the car would never land. A world-down ray still finds the ground under a
+	# tumbling car so air-trick landings (clean OR botched/off-axis) resolve. Only reached when
+	# airborne+tilted — on a surface there are slide collisions, and upright the car-down ray already
+	# hit — so this does not change grounded / loop / ceiling behaviour.
+	var world_to := from - Vector3.UP * (ray_length + 0.2)
+	var world_query := PhysicsRayQueryParameters3D.create(from, world_to, _vehicle.collision_mask, [_vehicle.get_rid()])
+	var world_result := space_state.intersect_ray(world_query)
+	if not world_result.is_empty():
+		return world_result.normal
 	return Vector3.ZERO
 
 
