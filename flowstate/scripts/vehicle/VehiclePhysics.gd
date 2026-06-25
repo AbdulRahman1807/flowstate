@@ -67,7 +67,19 @@ signal trick_landed(degrees: float, clean: bool)   # Air trick landed — total 
 @export var trick_crash_speed_penalty: float = 0.6 # Fraction of speed lost on a full roof landing (scales with how inverted)
 @export var trick_crash_flow_penalty: float = 1.0  # Flow lost on a full roof landing (scales with how inverted)
 
+# Airborne pitch (013 feel): while jumping/falling (NOT during a trick), the nose follows the velocity
+# ARC — pitches up while rising, down while falling — instead of staying perfectly level like a plank.
+# Orientation-only (step 3 reprojects velocity onto the new basis, so momentum is untouched).
+@export var air_pitch_enabled: bool = true
+@export var air_pitch_rate: float = 6.0        # how fast the nose eases toward the velocity direction (slerp/sec)
+@export var air_pitch_max_deg: float = 55.0    # clamp so a near-vertical launch doesn't point the car straight up/down
+@export var air_pitch_min_speed: float = 3.0   # below this airborne speed, don't reorient (direction ill-defined)
+@export var air_pitch_min_airtime: float = 0.2 # only pitch after this much CONTINUOUS airtime — brief surface bumps (banked spirals/loops) keep their orientation so surface re-attach isn't disturbed
+@export var air_recover_rate: float = 8.0      # how fast a RELEASED trick eases (slerp/sec) to upright + facing-travel in the air — smooth, no backward snap
+@export var trick_rate_ramp: float = 9.0       # how fast trick rotation eases in / cross-fades when the axis switches (spin<->flip), so transitions aren't jarring
+
 var _is_grounded: bool = false
+var _last_landing_pitch: float = 0.0       # nose elevation (rad) of the car at the instant it last touched down — read by VehicleVisuals to ease the dive→flat landing settle (negative = nose-down)
 var _boost_active: bool = false
 var _boost_timer: float = 0.0
 var _boost_cooldown_timer: float = 0.0
@@ -79,6 +91,8 @@ var _is_drifting: bool = false
 var _drift_vel_xz: Vector2 = Vector2.ZERO  # Jolt auto-realigns velocity to facing between frames; this stores intended drift direction
 var _trick_active: bool = false            # an air trick is rotating this frame
 var _trick_rotation_accum: float = 0.0     # degrees rotated since leaving the ground (reset on landing)
+var _trick_rate_cur: float = 0.0           # ramped current trick rotation rate (eases in; resets on axis switch → smooth spin<->flip cross-fade)
+var _trick_axis_prev: Vector3 = Vector3.ZERO
 var _airborne_time: float = 0.0            # continuous seconds airborne — gates air-trick engagement
 
 @onready var _vehicle_controller: VehicleController = $VehicleController
@@ -130,6 +144,17 @@ func apply_intent(intent: MovementIntent) -> void:
 			_trick_axis = Vector3.UP               # spin around the up axis
 		_trick_active = true
 
+	# Ease the trick rotation rate in, and RESET it when the axis switches, so starting a trick and
+	# changing spin<->flip cross-fades the rotation up to speed instead of snapping the plane to full rate.
+	if _trick_active:
+		if not _trick_axis.is_equal_approx(_trick_axis_prev):
+			_trick_rate_cur = 0.0
+		_trick_rate_cur = lerpf(_trick_rate_cur, _trick_rate, clampf(delta * trick_rate_ramp, 0.0, 1.0))
+		_trick_axis_prev = _trick_axis
+	else:
+		_trick_rate_cur = 0.0
+		_trick_axis_prev = Vector3.ZERO
+
 	# 2. Align vehicle orientation to gravity
 	var gravity_vec := Vector3(0, -gravity_force, 0)
 	var gravity_up := Vector3.UP
@@ -144,22 +169,60 @@ func apply_intent(intent: MovementIntent) -> void:
 		# we fully re-seat the car: upright AND facing its DIRECTION OF TRAVEL — so a tumbled (flip) or
 		# spun-around (spin) car recovers to a drivable forward heading. The car has a fixed front, so
 		# landing inverted/backward is judged a CRASH in step 10 (momentum cost), but control recovers
-		# (Pillar 5). This grounded recovery also covers SPINS, where up is unchanged so the plain
+		# (Pillar a 5). This grounded recovery also covers SPINS, where up is unchanged so the plain
 		# up-align below would skip and leave the car stuck facing backward (janky reverse). Surface-
 		# following (loops) never accrues trick rotation, so it keeps the -basis.z heading exactly as before.
 		var ground_recover := _is_grounded and _trick_rotation_accum > 0.0
-		if not _trick_active and (ground_recover or not current_up.is_equal_approx(gravity_up)):
-			var forward_ref := -global_transform.basis.z
-			if ground_recover:
-				var travel := velocity - gravity_up * velocity.dot(gravity_up)
-				if travel.length() > 1.0:
-					forward_ref = travel.normalized()
-			var right_ref := forward_ref.cross(gravity_up)
-			if right_ref.length_squared() < 0.001:
-				right_ref = global_transform.basis.x
-			right_ref = right_ref.normalized()
-			var true_forward := gravity_up.cross(right_ref).normalized()
-			global_transform.basis = Basis(right_ref, gravity_up, -true_forward)
+		if not _trick_active:
+			if _is_grounded:
+				if ground_recover or not current_up.is_equal_approx(gravity_up):
+					var forward_ref := -global_transform.basis.z
+					if ground_recover:
+						var travel := velocity - gravity_up * velocity.dot(gravity_up)
+						if travel.length() > 1.0:
+							forward_ref = travel.normalized()
+					var right_ref := forward_ref.cross(gravity_up)
+					if right_ref.length_squared() < 0.001:
+						right_ref = global_transform.basis.x
+					right_ref = right_ref.normalized()
+					var true_forward := gravity_up.cross(right_ref).normalized()
+					global_transform.basis = Basis(right_ref, gravity_up, -true_forward)
+			else:
+				# Airborne, not mid-trick. Sustained real airtime (no trick) → pitch the nose to follow the
+				# velocity ARC. Otherwise — brief surface bumps (banked spirals/loops), low speed, or
+				# recovering from a trick — keep the prior behavior of leveling to gravity-up so surface
+				# re-attachment is undisturbed (dropping this stalled the climbing-spiral probe).
+				var recovering := _trick_rotation_accum > 0.0
+				if velocity.length() > air_pitch_min_speed and (recovering or (air_pitch_enabled and _airborne_time >= air_pitch_min_airtime)):
+					# Slerp toward a velocity-aligned orientation. RECOVERING from a trick → heading = TRAVEL
+					# (eases a released flip/spin to upright + facing-forward, no backward snap); otherwise
+					# keep the current heading and just pitch to the arc. Orientation-only: step 3 reprojects
+					# velocity onto this basis, so momentum is preserved.
+					var flat_fwd := (velocity - gravity_up * velocity.dot(gravity_up)) if recovering else -global_transform.basis.z
+					if not recovering:
+						flat_fwd.y = 0.0
+					if flat_fwd.length() < 0.05:
+						flat_fwd = Vector3(velocity.x, 0.0, velocity.z)
+					if flat_fwd.length() > 0.05:
+						flat_fwd = flat_fwd.normalized()
+						var horiz := Vector2(velocity.x, velocity.z).length()
+						var pitch := clampf(atan2(velocity.y, maxf(horiz, 0.01)),
+							-deg_to_rad(air_pitch_max_deg), deg_to_rad(air_pitch_max_deg))
+						var p_right := flat_fwd.cross(Vector3.UP).normalized()
+						var des_fwd := flat_fwd.rotated(p_right, pitch)
+						var des_up := p_right.cross(des_fwd).normalized()
+						var des_q := Basis(p_right, des_up, -des_fwd).get_rotation_quaternion()
+						var cur_q := global_transform.basis.get_rotation_quaternion()
+						var rate := air_recover_rate if recovering else air_pitch_rate
+						global_transform.basis = Basis(cur_q.slerp(des_q, clampf(delta * rate, 0.0, 1.0)))
+				elif not current_up.is_equal_approx(gravity_up):
+					var forward_ref := -global_transform.basis.z
+					var right_ref := forward_ref.cross(gravity_up)
+					if right_ref.length_squared() < 0.001:
+						right_ref = global_transform.basis.x
+					right_ref = right_ref.normalized()
+					var true_forward := gravity_up.cross(right_ref).normalized()
+					global_transform.basis = Basis(right_ref, gravity_up, -true_forward)
 			
 	up_direction = gravity_up
 	var forward := -transform.basis.z
@@ -318,8 +381,8 @@ func apply_intent(intent: MovementIntent) -> void:
 	elif _trick_active:
 		# Air trick: rotate ORIENTATION ONLY around the trick axis. Do NOT rebuild velocity from the
 		# rotated basis — the car spins/flips but keeps flying the same way (momentum preserved, Pillar 1).
-		rotate_object_local(_trick_axis, _trick_dir * deg_to_rad(_trick_rate) * delta)
-		_trick_rotation_accum += _trick_rate * delta
+		rotate_object_local(_trick_axis, _trick_dir * deg_to_rad(_trick_rate_cur) * delta)
+		_trick_rotation_accum += _trick_rate_cur * delta
 	elif intent.steer != 0.0:
 		var speed_ratio := clampf(absf(signed_forward_speed) / max_speed, 0.0, 1.0) if max_speed > 0.0 else 0.0
 		var dampen_factor := lerpf(1.0, high_speed_steering_dampen, speed_ratio)
@@ -424,6 +487,9 @@ func apply_intent(intent: MovementIntent) -> void:
 	# landing_dot ~0 (steep landings were never penalized — every landing felt identical).
 	if not _was_grounded_last_frame and _is_grounded:
 		var impact_velocity := absf(incoming_velocity.dot(gravity_up))
+		# Nose elevation of the pre-snap forward vs the surface — VehicleVisuals eases this to flat so a
+		# nosedive settles instead of teleporting level. Negative = nose-down. Set before the signal.
+		_last_landing_pitch = asin(clampf(incoming_forward.dot(gravity_up), -1.0, 1.0))
 		landed.emit(impact_velocity)
 
 		var surface_normal := gravity_up
@@ -536,6 +602,9 @@ func get_steer_input() -> float:
 
 func is_drifting() -> bool:
 	return _is_drifting
+
+func get_last_landing_pitch() -> float:
+	return _last_landing_pitch
 
 func is_tricking() -> bool:
 	return _trick_active

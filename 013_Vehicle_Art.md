@@ -173,9 +173,39 @@ flowstate/
 
 ---
 
-## Status
-Not started. Depends on: none (can be done in parallel with 014).
-Blocks: `016_VFX_Pass.md` (ComicPostFX outline pass looks wrong on a BoxMesh).
+## As-Built (2026-06-25) — Toyota AE86
 
-## Mesh Sourcing Decision
-Use Path B (Kenney CC0 import) to unblock everything immediately. Schedule a dedicated Blender MCP session to build the final vehicle when the rest of the visual layer is working. Swap the mesh then — `VehicleVisuals.gd` and the material system are identical regardless of mesh source.
+Dev supplied a **Toyota AE86 Sprinter Trueno** glTF (Sketchfab, `FoG Ryû`) — clean flat panels + hard lines, a strong fit for the cel/comic look (dev reference: a cel-shaded drifting-AE86 Sketchfab model, their own colours + graffiti on top). Moved into `flowstate/assets/meshes/ae86.glb` and imported (Godot extracted 32 PBR textures alongside it).
+
+**Mesh facts (from headless inspection):**
+- **Scale:** model is in **centimetres** (4.23 m car = 423 units) → instance scale **×0.01**.
+- **Facing:** front (headlights) is at **+Z**; Godot forward is −Z → **rotate 180° about Y**.
+- **Placement transform** (child of `Vehicle`, both scenes): `Transform3D(-0.01, 0, 0, 0, 0.01, 0, 0, 0, -0.01, 0, -1.5, 0)` (scale 0.01 + 180° Y, y −1.5). **Float fix (dev eyeball round 1):** the car first sat at y −0.8 and floated **0.706 m** above the deck — measured in-scene (`_ae86_fit` throwaway): the vehicle rests at origin y 1.5 while the deck is at y 0 (the collision capsule itself hovers ~0.7 — a pre-existing quirk the box hid). Dropped the visual to y −1.5 so the wheels meet the deck; collision/physics untouched.
+- **Camera (dev: "too small"):** the car is realistically sized (4.23 m in a 12 m lane), so the fix is **framing, not scale** — pulled `DynamicCamera` `follow_distance` 8→6 and `follow_height` 3→2.4 so it reads bigger without widening the visual-vs-capsule overhang. Scale (`0.01`) and these camera knobs are all live for taste.
+- **Structure** (useful for emissive targeting in stage 2 / cel shader in 016): `RootNode → Interior, SteeringWheel, CarBody, Headlights, FL/FR/RL/RR`. Body panels are split: `CarBody_Primary_0` (main paint), `CarBody_Secondary_0`, `CarBody_Trim1/2_0`, `CarBody_Windows_0`, `CarBody_LampCovers_0`, `CarBody_TailightFrame_0`, `CarBody_Reflector_0`, `CarBody_Trueno_0` (decal). Lights: `Headlights_*`. Wheels are **`VehicleWheel3D`** nodes (built for `VehicleBody3D`; harmless here — no runtime spam observed — but they won't spin since we drive a `CharacterBody3D`).
+
+⚠️ **PERF:** ~**420k vertices / 37 meshes / 32 textures / 83 MB**. The ghost run `duplicate()`s the whole vehicle → ~840k verts on screen. It loads + the probes are green, but this is the top framerate risk on the M2 (PRD wants lightweight). **Recommend a decimated / texture-baked re-export** once the look is locked (016 puts a flat cel shader over the body, so most PBR detail is redundant). Not blocking.
+
+### Done
+- AE86 imported + instanced into `Track_Circuit.tscn` and `Test_Playground.tscn` (replaced the placeholder BoxMesh). Collision is still the capsule — visual only.
+- Verified headless: both scenes load, `_CircuitSmokeProbe` / `_PlaygroundReplayProbe` PASS with **identical physics** (113.9 m, min-y 1.50); ghost duplication works with the heavier mesh.
+
+### Dev eyeball round 2 (2026-06-25) — float varied by section + arrow collision
+- **Submerging in some sections (fixed properly):** the static −1.5 offset floated on box decks but **submerged the car on ramps / ribbon arcs / loops**, because the collision capsule hovers above the surface by a *varying* amount per section. Replaced the fixed offset with **`VehicleVisuals.gd`** — a passive node (child of `Vehicle`) that each physics frame raycasts down the car's own −Y to the real surface and snaps the mesh's local Y so the wheels sit on it (flat / ramp / loop / wall all handled; airborne → wheels ease to `airborne_offset`). Writes only the mesh child's Y — physics untouched. Verified: holds −1.5 on the flat deck, no errors, adapts elsewhere. Knobs: `wheel_offset`, `snap_smoothing`, `airborne_offset`, `enabled`.
+- **Car collided with the arrow chevrons (fixed):** `_arrows_along` built them with `_add_box` (StaticBody + collision). Now `_add_edge_box` (visual-only MeshInstance) — arrows are decoration, no collision. (All other CircuitBuilder/PlaygroundBuilder decorations were already visual-only.)
+
+### Dev eyeball round 3 (2026-06-25) — landings snapped flat with no weight
+Dev: falling/nosediving, the car snapped instantly flat on touchdown ("like nothing happened"). Chose **A2+B1+B2+B3**. Implemented as VISUAL-only (physics body still snaps flat so momentum is preserved — easing the physics orientation would point forward into the ground and `move_and_slide` would bleed speed):
+- **A2 — landing pitch settle** (`VehicleVisuals`): physics snaps flat, but the mesh keeps the dive pitch (read from new `VehiclePhysics.get_last_landing_pitch()`, captured pre-snap) and eases to flat over ~0.3s, **pivoting about a point near the front** (`landing_pivot_forward`) so a nosedive lifts the rear down instead of burying the nose (no ground clip). Verified: continues at the dive angle, eases to level.
+- **B1 — suspension squash:** on impact, compress the mesh vertically (scale Y, scaled by impact, eased back) around the wheels — weight, no physics bounce. Verified scale.y 0.01→0.0086→0.00999.
+- **B2 — nose-dip:** a small extra nose-down on impact folded into the settle pitch (front suspension compress), eases out.
+- **B3 — camera:** `DynamicCamera.landing_dip_strength` 0.4→0.65, recovery 8→6 so landings punch.
+
+`VehicleVisuals` now OWNS the mesh's local transform (captures base scale + 180° yaw in `_ready`, recomposes each frame = ground-snap height + squash + pivot-pitch). Knobs: `landing_settle_recovery`, `landing_settle_max_deg`, `landing_pivot_forward`, `nose_dip_scale`, `squash_scale/max/recovery`, `land_min_impact`. No physics/probe regression (18/26, same 8 pre-existing).
+
+### Pending (needs a dev eyeball — headless can't render)
+- Confirm the car now sits planted across all sections (ramps, the two loops, wall runs) and the framing feels right; tweak `wheel_offset` / `snap_smoothing` on `VehicleVisuals`, the transform `0.01` (size), or the camera knobs as needed.
+- Then the rest of `VehicleVisuals.gd`: **speed-reactive emissives** (underglow + headlight/taillight glow; the car's own PBR materials stay until 016's cel pass), and the cel shader (016).
+
+## Status
+**Stage 1 done (mesh in-scene, physics-clean); VehicleVisuals + cel shader pending a visual confirm.** Blocks: `016_VFX_Pass.md`. The Blender-MCP custom-vehicle path is moot for now — the AE86 is the vehicle.

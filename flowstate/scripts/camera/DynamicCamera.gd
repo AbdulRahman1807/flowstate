@@ -2,8 +2,8 @@ class_name DynamicCamera
 extends Camera3D
 
 @export var vehicle_path: NodePath
-@export var follow_distance: float = 8.0
-@export var follow_height: float = 3.0
+@export var follow_distance: float = 6.0   # pulled in from 8.0 so the AE86 reads bigger on screen (013 — car is realistically sized for the 12m lane; framing, not scale, makes it prominent)
+@export var follow_height: float = 2.4      # from 3.0 — lower, closer behind the low-profile car
 @export var fov_min: float = 75.0
 @export var fov_max: float = 100.0
 @export var fov_speed_range: Vector2 = Vector2(0.0, 40.0)
@@ -15,8 +15,8 @@ extends Camera3D
 @export var tilt_strength: float = 0.08
 @export var tilt_smoothing: float = 6.0
 @export var drift_travel_follow: float = 1.0   # While drifting, blend the follow direction toward travel (velocity) vs car facing. 0 = old facing-follow (camera veers with the yaw), 1 = fully behind travel (steady cam, car slides sideways in frame)
-@export var landing_dip_strength: float = 0.4
-@export var landing_dip_recovery: float = 8.0
+@export var landing_dip_strength: float = 0.35   # subtle landing dip (dialed back from 0.65 — landings were too harsh)
+@export var landing_dip_recovery: float = 9.0     # recovers quickly so the dip is a gentle nod, not a slam
 
 var camera_up: Vector3 = Vector3.UP
 

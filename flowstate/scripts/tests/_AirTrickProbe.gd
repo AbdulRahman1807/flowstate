@@ -40,6 +40,7 @@ func _initialize() -> void:
 	_score = Node.new(); _score.set_script(load("res://scripts/systems/ScoreSystem.gd")); _score.name = "ScoreSystem"
 	world.add_child(_score)   # default vehicle_path "../Vehicle" resolves to world/Vehicle
 
+	_v.trick_rate_ramp = 1000.0   # disable the ease-in ramp for deterministic degree-counting (the ramp is a feel layer, tested by driving)
 	_v.trick_landed.connect(_on_trick)
 	# Tests start the car high up (y=50) so it stays airborne for the whole rotation; landings are
 	# triggered by teleporting onto the floor. Gravity stays ON (it drives up_direction), so the

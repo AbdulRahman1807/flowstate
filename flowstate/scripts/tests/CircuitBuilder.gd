@@ -378,7 +378,8 @@ func _arrows_along(cur: Transform3D, length: float) -> void:
 		var p := cur.origin + fwd * t + cur.basis.y * 0.06
 		for side: float in [-1.0, 1.0]:
 			var b := cur.basis.rotated(cur.basis.y.normalized(), deg_to_rad(35.0 * side))
-			_add_box(Vector3(0.4, 0.12, 3.2), p + cur.basis.x * (side * 0.9), b, _mat_arrow)
+			# Visual-only (_add_edge_box, no collision) — arrows are decoration; the car must not hit them.
+			_add_edge_box(Vector3(0.4, 0.12, 3.2), p + cur.basis.x * (side * 0.9), b, _mat_arrow)
 
 
 func _ride_wall(end_cur: Transform3D, length: float) -> void:

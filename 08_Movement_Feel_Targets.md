@@ -125,6 +125,17 @@ When a section passes, mark it. When all sections pass, movement is ready for wa
 - Air steering authority: approximately 55–65% of ground steering (revised from 30–40% — wall-to-wall transitions require meaningful mid-arc redirection, not just landing adjustment)
 - Air steering should not affect forward speed
 
+### Airborne Pitch (2026-06-25)
+
+**Target feel:** A real car (and the AE86 in particular) noses up as it launches and noses down as it falls — it pivots to follow its trajectory rather than staying a perfectly level plank in the air. This is a *visual/orientation* behaviour; it must not bleed momentum.
+
+**Implementation (`VehiclePhysics` step 2, exported):** while airborne with no trick in progress and past `air_pitch_min_airtime` (0.2 s, so brief surface bumps on banked spirals/loops are excluded and keep surface-following intact), the car's nose slerps (`air_pitch_rate` 6/s) toward the velocity direction — pitch from `atan2(velocity.y, horizontal)`, clamped to `air_pitch_max_deg` (55°) so a near-vertical launch doesn't point it straight up. Heading (yaw) and zero-roll are preserved; air steering still works on top. Orientation-only — step 3 reprojects velocity onto the new basis, so speed is untouched. Tricks (held E) bypass it entirely; below the airtime gate the car keeps the prior level-to-gravity-up behaviour.
+
+**Failure modes:**
+- Pitches on tiny surface bumps → jitter / breaks surface re-attach (fixed via the airtime gate)
+- Pitch couples into velocity → momentum bleed (avoided: orientation-only)
+- Over-pitch on near-vertical launches → car points straight up (clamped)
+
 ---
 
 ### Landing

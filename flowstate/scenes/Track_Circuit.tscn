@@ -13,6 +13,8 @@
 [ext_resource type="Script" path="res://scripts/systems/ScoreSystem.gd" id="11"]
 [ext_resource type="Script" path="res://scripts/systems/RunManager.gd" id="12"]
 [ext_resource type="Script" path="res://scripts/systems/PlayHUD.gd" id="13"]
+[ext_resource type="PackedScene" path="res://assets/meshes/ae86.glb" id="14_ae86"]
+[ext_resource type="Script" path="res://scripts/vehicle/VehicleVisuals.gd" id="15_vis"]
 
 [sub_resource type="Environment" id="env"]
 background_mode = 1
@@ -49,8 +51,11 @@ script = ExtResource("1")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Vehicle"]
 shape = SubResource("cap")
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Vehicle"]
-mesh = SubResource("boxmesh")
+[node name="AE86" parent="Vehicle" instance=ExtResource("14_ae86")]
+transform = Transform3D(-0.01, 0, 0, 0, 0.01, 0, 0, 0, -0.01, 0, -1.5, 0)
+
+[node name="VehicleVisuals" type="Node3D" parent="Vehicle"]
+script = ExtResource("15_vis")
 
 [node name="VehicleController" type="Node" parent="Vehicle"]
 script = ExtResource("2")
