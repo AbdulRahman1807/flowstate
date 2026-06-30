@@ -42,14 +42,14 @@ func _physics_process(_dt: float) -> bool:
 		_wr.try_wall_detach(0.0, 1.0, 0.0)   # wall jump (W) -> on_wall_jump + on_wall_detach
 		print("  wall-jump  bursts=%d (expect 2 — detach de-duped)" % _vfx.bursts_fired)
 	elif _t == 16:
-		_v.jumped.emit(Vector3.UP)            # ground jump
-		print("  ground-jump  bursts=%d (expect 3)" % _vfx.bursts_fired)
+		_v.jumped.emit(Vector3.UP)            # clean ground jump -> NO spark now (no contact)
+		print("  ground-jump  bursts=%d (expect still 2 — clean takeoff doesn't spark)" % _vfx.bursts_fired)
 	elif _t == 18:
-		_v.landed.emit(10.0)                  # land
-		print("  land  bursts=%d (expect 4)" % _vfx.bursts_fired)
+		_v.landed.emit(10.0)                  # hard landing -> spark
+		print("  land  bursts=%d (expect 3)" % _vfx.bursts_fired)
 	elif _t >= 22:
-		var ok: bool = _attach_ok and _vfx.bursts_fired == 4
-		print("=> bursts_fired=%d  (attach+walljump+groundjump+land, jump de-duped)  PASS=%s" % [_vfx.bursts_fired, ok])
+		var ok: bool = _attach_ok and _vfx.bursts_fired == 3
+		print("=> bursts_fired=%d  (attach+walljump+land; ground-jump & near-miss no longer spark — no contact)  PASS=%s" % [_vfx.bursts_fired, ok])
 		print("=== done ===")
 		return true
 	return false

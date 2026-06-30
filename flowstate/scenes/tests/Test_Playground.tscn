@@ -21,8 +21,8 @@ ambient_light_color = Color(0.04, 0.04, 0.08, 1)
 ambient_light_energy = 0.3
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape_vehicle"]
-radius = 0.8
-height = 1.6
+radius = 0.92
+height = 3.0
 
 [sub_resource type="BoxMesh" id="BoxMesh_vehicle"]
 size = Vector3(1.6, 1, 2.4)
@@ -46,6 +46,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
 script = ExtResource("1_vehicle_physics")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Vehicle"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
 shape = SubResource("CapsuleShape_vehicle")
 
 [node name="AE86" parent="Vehicle" instance=ExtResource("11_ae86")]

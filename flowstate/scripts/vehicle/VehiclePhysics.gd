@@ -22,6 +22,8 @@ signal trick_landed(degrees: float, clean: bool)   # Air trick landed — total 
 @export var high_speed_steering_dampen: float = 0.45
 
 @export var jump_force: float = 12.0
+@export var scrape_wall_dot_max: float = 0.5   # a slide contact with |normal·up| above this is the floor/ceiling under us, not a wall scrape
+@export var scrape_min_speed: float = 5.0      # minimum slide speed ALONG a wall to count as a scrape (drives friction sparks)
 @export var air_control_strength: float = 0.6
 @export var gravity_force: float = 18.0
 
@@ -79,6 +81,11 @@ signal trick_landed(degrees: float, clean: bool)   # Air trick landed — total 
 @export var trick_rate_ramp: float = 9.0       # how fast trick rotation eases in / cross-fades when the axis switches (spin<->flip), so transitions aren't jarring
 
 var _is_grounded: bool = false
+var _scrape_active: bool = false
+var _scrape_point: Vector3 = Vector3.ZERO
+var _scrape_normal: Vector3 = Vector3.ZERO
+var _scrape_tangent: Vector3 = Vector3.ZERO   # unit direction of sliding along the scraped wall
+var _scrape_speed: float = 0.0
 var _last_landing_pitch: float = 0.0       # nose elevation (rad) of the car at the instant it last touched down — read by VehicleVisuals to ease the dive→flat landing settle (negative = nose-down)
 var _boost_active: bool = false
 var _boost_timer: float = 0.0
@@ -553,6 +560,10 @@ func apply_intent(intent: MovementIntent) -> void:
 	# 11. move_and_slide()
 	move_and_slide()
 
+	# 11b. Friction-spark contact — record the strongest wall-scrape from this frame's slide
+	# collisions so WallVFX can spark at the real contact point along the slide direction.
+	_update_scrape_contact()
+
 	# 12. Gravity accumulation — after move_and_slide so this frame's landing impact_velocity is
 	# not inflated. GravitySystem composes the applied gravity (Seam 2): pure into-surface while
 	# attached (H4-clean), world gravity airborne. VehiclePhysics just applies it, so Phase 2's
@@ -573,6 +584,42 @@ func get_speed() -> float:
 # Read-only access to grounded state — used by camera landing dip in Task 002.
 func is_grounded() -> bool:
 	return _is_grounded
+
+
+# --- Scrape contact (friction sparks; read by WallVFX) ----------------------
+# After move_and_slide, find the strongest WALL-like slide contact (normal roughly perpendicular to
+# our up, so the floor/ceiling we drive on is excluded) and record where it is + how fast we are
+# sliding ALONG it. WallVFX turns this into friction sparks at the real contact point.
+func _update_scrape_contact() -> void:
+	_scrape_active = false
+	_scrape_speed = 0.0
+	var up := transform.basis.y
+	var best := 0.0
+	for i in range(get_slide_collision_count()):
+		var c := get_slide_collision(i)
+		var n := c.get_normal()
+		if absf(n.dot(up)) > scrape_wall_dot_max:
+			continue   # floor / ceiling under us — not a wall scrape
+		var tang := velocity - n * velocity.dot(n)   # velocity component along the surface
+		var tspeed := tang.length()
+		if tspeed > best:
+			best = tspeed
+			_scrape_point = c.get_position()
+			_scrape_normal = n
+			_scrape_tangent = tang / maxf(tspeed, 0.001)
+			_scrape_speed = tspeed
+	_scrape_active = best >= scrape_min_speed
+
+
+# {active:bool, point:Vector3, normal:Vector3, tangent:Vector3, speed:float}
+func get_scrape_contact() -> Dictionary:
+	return {
+		"active": _scrape_active,
+		"point": _scrape_point,
+		"normal": _scrape_normal,
+		"tangent": _scrape_tangent,
+		"speed": _scrape_speed,
+	}
 
 
 func is_boost_active() -> bool:

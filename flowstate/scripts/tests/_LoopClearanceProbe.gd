@@ -36,7 +36,8 @@ func _initialize() -> void:
 	cb._real_loop(Transform3D(Basis.IDENTITY, Vector3(0, 0, 0)), R, N)
 
 	_v = CharacterBody3D.new(); _v.set_script(load("res://scripts/vehicle/VehiclePhysics.gd")); _v.name = "Vehicle"
-	var col := CollisionShape3D.new(); var cap := CapsuleShape3D.new(); cap.radius = 0.8; cap.height = 1.6; col.shape = cap
+	var col := CollisionShape3D.new(); var cap := CapsuleShape3D.new(); cap.radius = 0.92; cap.height = 3.0; col.shape = cap
+	col.transform = Transform3D(Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(0, -1, 0), Vector3.ZERO)   # real shape: capsule laid along Z (fore-aft) so the nose/tail are covered
 	_v.add_child(col)
 	_vc = _mk(_v, "VehicleController", Node, "res://scripts/vehicle/VehicleController.gd")
 	_gs = _mk(_v, "GravitySystem", Node3D, "res://scripts/vehicle/GravitySystem.gd")

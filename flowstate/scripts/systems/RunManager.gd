@@ -35,6 +35,7 @@ enum RunState { READY, RUNNING, FINISHED }
 @export var enable_ghost: bool = true                   # Spawn a ghost replaying your best run so far
 @export var ghost_color: Color = Color(0.0, 1.0, 0.8)   # 04_Art_Direction cyan
 @export var ghost_alpha: float = 0.35
+@export var ghost_emission_energy: float = 0.5   # faint self-glow so the translucent ghost reads on the dark scene (blooms slightly under env glow)
 
 var _vehicle: VehiclePhysics
 var _flow: FlowSystem
@@ -245,21 +246,36 @@ func _spawn_ghost(data: ReplayData) -> void:
 	if is_instance_valid(gc):
 		gc.replay_recorder = null
 		gc.set_replay(data)
-	# Translucent ghost look.
-	var mesh := ghost.get_node_or_null("MeshInstance3D") as MeshInstance3D
-	if is_instance_valid(mesh):
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(ghost_color.r, ghost_color.g, ghost_color.b, ghost_alpha)
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.emission_enabled = true
-		mat.emission = ghost_color
-		mat.emission_energy_multiplier = 0.6
-		mesh.material_override = mat
+	# Translucent monochrome "ghost" look. The AE86 is a glb with MANY sub-meshes (body panels +
+	# wheels), so the old single "MeshInstance3D" lookup silently missed all of them and the ghost
+	# rendered as a full-colour exact copy of the car. Re-skin EVERY mesh under the ghost with one
+	# flat unshaded translucent material so it reads as a hologram, not a clone.
+	var ghost_mat := StandardMaterial3D.new()
+	ghost_mat.albedo_color = Color(ghost_color.r, ghost_color.g, ghost_color.b, ghost_alpha)
+	ghost_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	ghost_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED   # flat monochrome, ignores scene lighting
+	ghost_mat.emission_enabled = true
+	ghost_mat.emission = ghost_color
+	ghost_mat.emission_energy_multiplier = ghost_emission_energy
+	ghost_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	for mi in _find_mesh_instances(ghost):
+		mi.material_override = ghost_mat
 	parent.add_child(ghost)
 	ghost.global_transform = data.start_transform
 	if ghost.has_method("set_vehicle_velocity"):
 		ghost.set_vehicle_velocity(data.start_velocity)
 	_ghost = ghost
+
+
+# Recursively collect every MeshInstance3D in a subtree. The AE86 glb nests its body panels and
+# wheels under several nodes, so the ghost reskin must reach all of them, not just a top-level mesh.
+func _find_mesh_instances(node: Node) -> Array[MeshInstance3D]:
+	var out: Array[MeshInstance3D] = []
+	for child in node.get_children():
+		if child is MeshInstance3D:
+			out.append(child)
+		out.append_array(_find_mesh_instances(child))
+	return out
 
 
 # --- Getters (HUD reads these per-frame) ---
