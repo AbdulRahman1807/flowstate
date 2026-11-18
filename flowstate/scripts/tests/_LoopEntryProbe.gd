@@ -5,7 +5,7 @@ extends SceneTree
 # between them BOTH real loop sizes are covered with the real shape. Drives a grounded car into the
 # real builder loop, jumps in onto the front, and asserts it still inverts and rides high over the top
 # (the long collision nose doesn't catch on the way in / fail to establish inversion). Run:
-# Godot --headless --path /Users/abdul/Desktop/flowstate/flowstate --script res://scripts/tests/_LoopEntryProbe.gd
+# Godot --headless --path /Users/abdul/Desktop/Personal/flowstate/flowstate --script res://scripts/tests/_LoopEntryProbe.gd
 
 const R := 16.0
 const N := 60

@@ -12,6 +12,12 @@
 [ext_resource type="Script" path="res://scripts/systems/RunManager.gd" id="10_run_manager"]
 [ext_resource type="PackedScene" path="res://assets/meshes/ae86.glb" id="11_ae86"]
 [ext_resource type="Script" path="res://scripts/vehicle/VehicleVisuals.gd" id="12_vis"]
+[ext_resource type="Script" path="res://scripts/vehicle/WallVFX.gd" id="13_wall_vfx"]
+[ext_resource type="PackedScene" uid="uid://b8comicpostfx00" path="res://scenes/fx/ComicPostFX.tscn" id="14_comicfx"]
+[ext_resource type="Script" path="res://scripts/fx/ComicPostFXDriver.gd" id="15_fxdriver"]
+[ext_resource type="Script" path="res://scripts/systems/EventPopups.gd" id="16_popups"]
+[ext_resource type="Script" path="res://scripts/fx/panel/PanelDirector.gd" id="17_paneldir"]
+[ext_resource type="Script" path="res://scripts/fx/panel/PanelEventTranslator.gd" id="18_paneltrans"]
 
 [sub_resource type="Environment" id="Environment_world"]
 background_mode = 1
@@ -70,6 +76,10 @@ script = ExtResource("7_flow_system")
 [node name="WallSensor" type="Node" parent="Vehicle"]
 script = ExtResource("8_wall_sensor")
 
+[node name="WallVFX" type="Node3D" parent="Vehicle"]
+script = ExtResource("13_wall_vfx")
+enabled = true
+
 [node name="Camera3D" type="Camera3D" parent="Vehicle"]
 transform = Transform3D(1, 0, 0, 0, 0.939693, 0.34202, 0, -0.34202, 0.939693, 0, 3, 6)
 current = true
@@ -78,6 +88,34 @@ vehicle_path = NodePath("..")
 
 [node name="RunManager" type="Node" parent="."]
 script = ExtResource("10_run_manager")
+
+[node name="ComicPostFXDriver" type="Node" parent="."]
+script = ExtResource("15_fxdriver")
+fx_path = NodePath("../ComicPostFX")
+vehicle_path = NodePath("../Vehicle")
+flow_system_path = NodePath("../Vehicle/FlowSystem")
+
+[node name="ComicPostFX" parent="." instance=ExtResource("14_comicfx")]
+
+[node name="EventPopups" type="CanvasLayer" parent="."]
+script = ExtResource("16_popups")
+enabled = false
+vehicle_path = NodePath("../Vehicle")
+wall_riding_path = NodePath("../Vehicle/WallRiding")
+run_manager_path = NodePath("../RunManager")
+gravity_system_path = NodePath("../Vehicle/GravitySystem")
+
+[node name="PanelDirector" type="CanvasLayer" parent="."]
+script = ExtResource("17_paneldir")
+vehicle_path = NodePath("../Vehicle")
+
+[node name="PanelEventTranslator" type="Node" parent="."]
+script = ExtResource("18_paneltrans")
+vehicle_path = NodePath("../Vehicle")
+director_path = NodePath("../PanelDirector")
+wall_riding_path = NodePath("../Vehicle/WallRiding")
+flow_system_path = NodePath("../Vehicle/FlowSystem")
+run_manager_path = NodePath("../RunManager")
 
 [node name="DebugUI" type="CanvasLayer" parent="."]
 

@@ -25,13 +25,13 @@ extends Node3D
 
 # --- impact sparks (white-hot streaks, monochrome) -------------------------
 @export var spark_color: Color = Color(0.55, 0.95, 1.0) ## single neon tint in the white-hot sparks (no rainbow)
-@export var burst_amount: int = 16        ## particles in an impact pop
-@export var ride_amount: int = 12         ## continuous wall-ride spark density
-@export var scrape_amount: int = 24       ## continuous wall-scrape spark density
+@export var burst_amount: int = 28        ## particles in an impact pop (more = louder)
+@export var ride_amount: int = 20         ## continuous wall-ride spark density
+@export var scrape_amount: int = 40       ## continuous wall-scrape spark density
 @export var spark_lifetime: float = 0.28
-@export var burst_speed: float = 18.0
-@export var spark_length: float = 0.7     ## long axis of the spark streak (stretched along its velocity)
-@export var spark_thickness: float = 0.09 ## short axis — a thin glowing head tapering to a fine tail
+@export var burst_speed: float = 24.0
+@export var spark_length: float = 1.1     ## long axis of the spark streak (stretched along its velocity — bigger)
+@export var spark_thickness: float = 0.12 ## short axis — a thin glowing head tapering to a fine tail
 @export var spark_gravity: float = 22.0   ## sparks arc down fast like real embers
 @export_range(0.0, 90.0) var spark_spread: float = 22.0  ## tight cone for impact sparks (degrees)
 @export_range(0.0, 90.0) var scrape_spread: float = 30.0 ## slightly wider fan for grinding sparks (degrees)

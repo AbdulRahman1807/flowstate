@@ -53,6 +53,7 @@ uniform float halftone_scale : hint_range(20.0, 400.0) = 140.0;   // dots across
 uniform float halftone_angle : hint_range(0.0, 1.5708) = 0.4;     // screen rotation of the dot grid (radians)
 uniform vec3  halftone_color : source_color = vec3(0.05, 0.05, 0.08); // ink colour of the dots (near-black tint)
 uniform float halftone_shadow_bias : hint_range(0.0, 1.0) = 0.7;  // 1.0 = dots only in shadows; 0.0 = dots everywhere
+uniform float halftone_floor : hint_range(0.0, 0.5) = 0.08;       // luma below this (the dark void) gets NO dots — keeps the black bg clean on a dark scene
 
 // --- 3. ink edge outline (Sobel on luminance) ----------------------------
 uniform float outline_intensity : hint_range(0.0, 1.0) = 0.5;     // how strongly ink darkens edges
@@ -65,9 +66,26 @@ uniform float aberration_intensity : hint_range(0.0, 1.0) = 0.25; // master stre
 uniform float aberration_amount : hint_range(0.0, 8.0) = 1.6;     // max channel offset at the screen edge, in pixels
 uniform float aberration_edge_falloff : hint_range(0.5, 4.0) = 2.0; // >1 keeps the centre clean, splits only the edges
 
+// --- 5. speed lines (radial comic streaks) -------------------------------
+uniform float speed_lines_intensity : hint_range(0.0, 1.0) = 0.0;  // 0 = off; driven by ComicPostFXDriver from speed
+uniform float speed_lines_count : hint_range(4.0, 64.0) = 24.0;    // number of streak directions
+uniform float speed_lines_length : hint_range(0.0, 1.0) = 0.6;     // how far from centre streaks extend
+uniform float speed_lines_width : hint_range(0.0, 0.5) = 0.04;     // angular width of each streak
+uniform vec3  speed_lines_color : source_color = vec3(1.0, 1.0, 1.0); // streak colour (blends additive)
+uniform float speed_lines_speed : hint_range(0.0, 12.0) = 2.5;     // how fast streaks regenerate / drift outward (animation)
+uniform float speed_lines_density : hint_range(0.0, 1.0) = 0.5;    // fraction of spokes lit at once (lower = sparser / more random)
+
 // Rec.709 luminance.
 float luma(vec3 c) {
 	return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+// Cheap 1D hash for per-streak randomness (angle jitter, length, brightness, on/off).
+float hash11(float p) {
+	p = fract(p * 0.1031);
+	p *= p + 33.33;
+	p *= p + p;
+	return fract(p);
 }
 
 // RGB <-> HSV so we can push saturation without shifting hue.
@@ -172,7 +190,59 @@ void fragment() {
 		float aa = fwidth(dist) + 1.0e-4;
 		float dot = 1.0 - smoothstep(radius - aa, radius + aa, dist); // 1 inside dot
 
-		col = mix(col, halftone_color, dot * halftone_intensity);
+		// Gate out the near-black void: on a dark scene "dots in shadow" would be
+		// the WHOLE screen, so skip pixels below halftone_floor luma. Dots then
+		// land only on lit surfaces (track, car), not the empty background/sky.
+		float surface = smoothstep(halftone_floor, halftone_floor + 0.08, bright);
+		col = mix(col, halftone_color, dot * halftone_intensity * surface);
+	}
+
+	// ---- 5. Speed lines (RANDOM motion streaks) ---------------------------
+	//  Not an even sunburst — sparse, irregular streaks that pop in and out at
+	//  random. Each angular spoke is independently: gated on/off, angle-jittered,
+	//  given a random radial SEGMENT [inner,outer] (so they read as discrete
+	//  streaks, not full rays), a random width/brightness, and its own time phase
+	//  so it twinkles on its own schedule and drifts outward — like motion
+	//  particles streaking past. Invisible at rest (intensity 0).
+	if (speed_lines_intensity > 0.0001) {
+		vec2 fc = uv - vec2(0.5);
+		float dist = length(fc);
+		float angle = atan(fc.y, fc.x);
+
+		float sector = TAU / speed_lines_count;
+		float idx = floor(angle / sector + 0.5);          // nearest spoke index
+
+		// Per-spoke phase so streaks regenerate independently (no synced sunburst).
+		float phase = hash11(idx * 12.9898);
+		float lt = TIME * speed_lines_speed + phase * 17.0;
+		float life_t = fract(lt);
+		float seed = idx * 0.0717 + floor(lt) * 1.317;
+
+		float r_on  = hash11(seed + 1.0);
+		float r_ang = hash11(seed + 2.0);
+		float r_len = hash11(seed + 3.0);
+		float r_in  = hash11(seed + 4.0);
+		float r_bri = hash11(seed + 5.0);
+
+		// Sparse: only a fraction of spokes are lit this cycle.
+		float active = step(1.0 - speed_lines_density, r_on);
+
+		// Jitter the streak's centre angle within (and a bit past) its sector.
+		float center = idx * sector + (r_ang - 0.5) * sector * 1.4;
+		float adiff = abs(mod(angle - center + PI, TAU) - PI);
+		float hw = speed_lines_width * (0.5 + r_bri);
+		float across = 1.0 - smoothstep(hw * 0.35, hw, adiff);
+
+		// Random radial segment, periphery-biased, drifting outward over its life.
+		float inner = mix(0.16, 0.46, r_in) + life_t * 0.12;
+		float outer = inner + speed_lines_length * (0.25 + 0.75 * r_len);
+		float radial = smoothstep(inner, inner + 0.03, dist) * (1.0 - smoothstep(outer - 0.06, outer, dist));
+
+		// Fade in then out across the streak's life (a real streaking flash).
+		float life = sin(life_t * PI);
+
+		float streak = active * across * radial * life * (0.45 + 0.55 * r_bri) * speed_lines_intensity;
+		col = mix(col, col + speed_lines_color * streak, clamp(streak, 0.0, 1.0));
 	}
 
 	// ---- master wet/dry ----------------------------------------------------

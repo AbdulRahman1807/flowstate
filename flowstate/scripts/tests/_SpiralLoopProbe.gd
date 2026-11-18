@@ -4,7 +4,7 @@ extends SceneTree
 # real height and keeps moving — it does NOT stall at the bottom the way a true inverting loop does
 # (a full inverting loop-de-loop is not drivable from a ground approach with the current physics; see
 # the project memory note). Guards the "loops are drivable climbing spirals" decision.
-# Run: Godot --headless --path /Users/abdul/Desktop/flowstate/flowstate --script res://scripts/tests/_SpiralLoopProbe.gd
+# Run: Godot --headless --path /Users/abdul/Desktop/Personal/flowstate/flowstate --script res://scripts/tests/_SpiralLoopProbe.gd
 
 const RADIUS := 28.0
 const RISE := 16.0

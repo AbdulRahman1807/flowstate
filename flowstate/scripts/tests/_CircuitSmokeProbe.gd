@@ -3,7 +3,7 @@ extends SceneTree
 # Smoke-tests the new Track_Circuit: it loads, has the run markers, auto-starts on throttle, the car
 # drives the opening straight on solid deck (doesn't fall through), and crosses the first checkpoint.
 # Drives the REAL input path via Input.action_press("accelerate"). Run:
-# Godot --headless --path /Users/abdul/Desktop/flowstate/flowstate --script res://scripts/tests/_CircuitSmokeProbe.gd
+# Godot --headless --path /Users/abdul/Desktop/Personal/flowstate/flowstate --script res://scripts/tests/_CircuitSmokeProbe.gd
 
 var _scene: Node
 var _rm

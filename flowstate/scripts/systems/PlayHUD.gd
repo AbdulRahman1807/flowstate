@@ -20,6 +20,13 @@ class_name PlayHUD
 @export var flow_bar_height: float = 20.0
 @export var track_title: String = "FLOWSTATE — CIRCUIT"   # shown on the start/READY screen
 
+@export_group("Flow Display Placement")
+@export var show_flow_meter: bool = false                 # v2: the MomentumStack is the multiplier signal now — hide the old flow bar while tuning
+@export var vehicle_path: NodePath = NodePath("../Vehicle")
+@export var flow_follows_car: bool = true                  # float the multiplier near the car (comic HUD) vs fixed top-center
+@export var flow_car_offset: Vector2 = Vector2(0, -130)    # screen offset of the flow display from the car (negative y = above)
+@export var flow_follow_smooth: float = 12.0               # how snappily it tracks the car (lower = laggier)
+
 # 04_Art_Direction palette
 const COL_CYAN := Color(0.0, 1.0, 0.8)
 const COL_MAGENTA := Color(1.0, 0.18, 0.47)
@@ -30,6 +37,7 @@ const COL_OUTLINE := Color(0, 0, 0, 0.9)
 var _flow: FlowSystem
 var _score: ScoreSystem
 var _run: RunManager
+var _vehicle: Node3D
 
 var _flow_box: VBoxContainer
 var _flow_label: Label
@@ -54,10 +62,13 @@ func _ready() -> void:
 	_flow = get_node_or_null(flow_system_path) as FlowSystem
 	_score = get_node_or_null(score_system_path) as ScoreSystem
 	_run = get_node_or_null(run_manager_path) as RunManager
+	_vehicle = get_node_or_null(vehicle_path) as Node3D
 	if is_instance_valid(_flow):
 		_max_flow = _flow.max_flow
 
 	_build_ui()
+	if is_instance_valid(_flow_box):
+		_flow_box.visible = show_flow_meter   # de-emphasise the old flow bar; MomentumStack is the reward signal
 
 	if is_instance_valid(_flow):
 		_flow.on_changed.connect(_on_flow_changed)
@@ -78,6 +89,29 @@ func _process(delta: float) -> void:
 	_flow_idle_timer += delta
 	if _flow_idle_timer > fade_delay:
 		_flow_box.modulate.a = lerpf(_flow_box.modulate.a, idle_alpha, clampf(delta * 5.0, 0.0, 1.0))
+
+	_update_flow_box_position(delta)
+
+
+# Float the flow multiplier near the car's screen position (comic HUD). Falls back to
+# top-centre if following is off or the car can't be projected (no camera / behind it).
+func _update_flow_box_position(delta: float) -> void:
+	if not show_flow_meter:
+		return
+	var vp := get_viewport().get_visible_rect().size
+	var box_w := flow_bar_width
+	var box_h := _flow_box.size.y
+	var center: Vector2
+	var cam := get_viewport().get_camera_3d()
+	if flow_follows_car and cam != null and is_instance_valid(_vehicle) and not cam.is_position_behind(_vehicle.global_position):
+		center = cam.unproject_position(_vehicle.global_position) + flow_car_offset
+	else:
+		center = Vector2(vp.x * 0.5, 18.0 + box_h * 0.5)   # fixed top-centre fallback
+	var target := center - Vector2(box_w * 0.5, box_h * 0.5)
+	if _flow_box.position == Vector2.ZERO:
+		_flow_box.position = target   # snap on the first frame (avoid lerping from the origin)
+	else:
+		_flow_box.position = _flow_box.position.lerp(target, clampf(delta * flow_follow_smooth, 0.0, 1.0))
 
 
 # ----------------------------------------------------------------------------
@@ -175,10 +209,7 @@ func _make_label(text: String, font_size: int, color: Color) -> Label:
 func _build_ui() -> void:
 	# --- Flow display: top-center ---
 	_flow_box = VBoxContainer.new()
-	_flow_box.anchor_left = 0.5
-	_flow_box.anchor_right = 0.5
-	_flow_box.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_flow_box.offset_top = 18.0
+	# Positioned manually every frame so it can float near the car — see _update_flow_box_position().
 	_flow_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	_flow_box.add_theme_constant_override("separation", 4)
 	_flow_box.mouse_filter = Control.MOUSE_FILTER_IGNORE

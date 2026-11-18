@@ -4,7 +4,7 @@ extends SceneTree
 # so the ghost must come from your LAST run captured on restart (RunManager._restart) — drive,
 # press R, race the ghost of the run you just drove. Asserts a RunManager is wired into the
 # playground and that restarting (without a finish) spawns a replaying ghost.
-# Run: Godot --headless --path /Users/abdul/Desktop/flowstate/flowstate --script res://scripts/tests/_PlaygroundReplayProbe.gd
+# Run: Godot --headless --path /Users/abdul/Desktop/Personal/flowstate/flowstate --script res://scripts/tests/_PlaygroundReplayProbe.gd
 
 var _scene: Node
 var _rm

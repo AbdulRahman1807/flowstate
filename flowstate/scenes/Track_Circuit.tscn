@@ -15,6 +15,12 @@
 [ext_resource type="Script" path="res://scripts/systems/PlayHUD.gd" id="13"]
 [ext_resource type="PackedScene" path="res://assets/meshes/ae86.glb" id="14_ae86"]
 [ext_resource type="Script" path="res://scripts/vehicle/VehicleVisuals.gd" id="15_vis"]
+[ext_resource type="PackedScene" uid="uid://b8comicpostfx00" path="res://scenes/fx/ComicPostFX.tscn" id="16_comicfx"]
+[ext_resource type="Script" path="res://scripts/fx/ComicPostFXDriver.gd" id="17_fxdriver"]
+[ext_resource type="Script" path="res://scripts/systems/EventPopups.gd" id="18_popups"]
+[ext_resource type="Script" path="res://scripts/fx/panel/PanelDirector.gd" id="19_paneldir"]
+[ext_resource type="Script" path="res://scripts/fx/panel/PanelDirectorDebug.gd" id="20_paneldbg"]
+[ext_resource type="Script" path="res://scripts/fx/panel/PanelEventTranslator.gd" id="21_paneltrans"]
 
 [sub_resource type="Environment" id="env"]
 background_mode = 1
@@ -75,6 +81,7 @@ script = ExtResource("8")
 
 [node name="WallVFX" type="Node3D" parent="Vehicle"]
 script = ExtResource("9")
+enabled = true
 
 [node name="Camera3D" type="Camera3D" parent="Vehicle"]
 transform = Transform3D(1, 0, 0, 0, 0.939693, 0.34202, 0, -0.34202, 0.939693, 0, 3, 6)
@@ -102,3 +109,36 @@ vehicle_path = NodePath("../../Vehicle")
 
 [node name="PlayHUD" type="CanvasLayer" parent="."]
 script = ExtResource("13")
+
+[node name="ComicPostFXDriver" type="Node" parent="."]
+script = ExtResource("17_fxdriver")
+fx_path = NodePath("../ComicPostFX")
+vehicle_path = NodePath("../Vehicle")
+flow_system_path = NodePath("../Vehicle/FlowSystem")
+
+[node name="ComicPostFX" parent="." instance=ExtResource("16_comicfx")]
+
+[node name="EventPopups" type="CanvasLayer" parent="."]
+script = ExtResource("18_popups")
+enabled = false
+vehicle_path = NodePath("../Vehicle")
+wall_riding_path = NodePath("../Vehicle/WallRiding")
+run_manager_path = NodePath("../RunManager")
+score_system_path = NodePath("../ScoreSystem")
+gravity_system_path = NodePath("../Vehicle/GravitySystem")
+
+[node name="PanelDirector" type="CanvasLayer" parent="."]
+script = ExtResource("19_paneldir")
+vehicle_path = NodePath("../Vehicle")
+
+[node name="PanelDirectorDebug" type="Node" parent="."]
+script = ExtResource("20_paneldbg")
+director_path = NodePath("../PanelDirector")
+
+[node name="PanelEventTranslator" type="Node" parent="."]
+script = ExtResource("21_paneltrans")
+vehicle_path = NodePath("../Vehicle")
+director_path = NodePath("../PanelDirector")
+wall_riding_path = NodePath("../Vehicle/WallRiding")
+flow_system_path = NodePath("../Vehicle/FlowSystem")
+run_manager_path = NodePath("../RunManager")

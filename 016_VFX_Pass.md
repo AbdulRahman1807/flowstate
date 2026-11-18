@@ -318,7 +318,7 @@ Do not proceed to the next part until the current part looks correct. ComicPostF
 ---
 
 ## Status
-Not started. Depends on: `013_Vehicle_Art.md` (Part A meaningless on a BoxMesh), `014_Track_Visual_Baseline.md` (shader tuning requires the dark substrate).
+**BUILT 2026-06-30 — all four parts (A–D), probe-verified, PENDING dev drive-test.** Revived after the hand-drawn/sketch detour was abandoned (dev recommitted to comic + neon + Spider-Verse — this task's original target). A: `ComicPostFX` instanced into `Track_Circuit` + `Test_Playground`, `WallVFX.enabled = true` in both (contact-accurate sparks/scrape/drift-smoke now live). B: `ComicPostFXDriver.gd` — Flow→halftone+outline, speed→chromatic aberration (`pow²`), boost→CA spike, speed→speed-lines. C: speed-lines block added to `comic_post_fx.gdshader` + `ComicPostFX.gd` export group, retuned soft/periphery vs the earlier white-out. D: `EventPopups.gd` — comic slam onomatopoeia (`CanvasLayer` layer 50). `_ComicFXDriverProbe` 12/12 green; full headless suite 0 failures (incl. `_CircuitSmokeProbe` loading the fully-wired scene). Feel/intensity tuning is a dev eyeball pass (headless can't render the look) — every knob is `@export` on ComicPostFX / ComicPostFXDriver / EventPopups / WallVFX.
 Blocks: M5 human tester exit condition — this is what makes runs shareable and replay moments feel earned.
 
 ## Future Considerations

@@ -33,22 +33,23 @@ const SHADER_PATH := "res://shaders/comic_post_fx.gdshader"
 
 @export_group("Posterize + Saturation")
 @export var posterize_on: bool = true
-@export_range(0.0, 1.0) var posterize_intensity: float = 0.6   ## Blend toward cel colour banding.
+@export_range(0.0, 1.0) var posterize_intensity: float = 0.62  ## Blend toward cel colour banding.
 @export_range(2.0, 16.0) var posterize_levels: float = 6.0     ## Colour steps per channel (low = chunkier).
-@export_range(0.0, 2.0) var saturation_boost: float = 0.35     ## Extra saturation, no muddy midtones.
+@export_range(0.0, 2.0) var saturation_boost: float = 0.5      ## Extra saturation — vivid neon, not blown out (04: high saturation, no muddy mids).
 
 @export_group("Halftone / Ben-Day Dots")
-@export var halftone_on: bool = true
-@export_range(0.0, 1.0) var halftone_intensity: float = 0.18   ## Dot strength. Kept low for readability.
-@export_range(20.0, 400.0) var halftone_scale: float = 140.0   ## Dots across the screen (higher = finer).
+@export var halftone_on: bool = false  ## OFF by default — on a dark neon scene a full-screen dot pass reads as muddy low-contrast noise (dark dots on dark), not a sharp comic panel. Flip on for a crisp, fine, shadow-confined accent (retuned below to stay sharp).
+@export_range(0.0, 1.0) var halftone_intensity: float = 0.12   ## Dot strength. Subtle accent, not a screen fill.
+@export_range(20.0, 400.0) var halftone_scale: float = 180.0   ## Dots across the screen (HIGHER = finer / sharper / less clumsy).
 @export_range(0.0, 1.5708) var halftone_angle: float = 0.4     ## Dot-grid rotation (radians).
 @export var halftone_color: Color = Color(0.05, 0.05, 0.08)    ## Ink colour of the dots.
-@export_range(0.0, 1.0) var halftone_shadow_bias: float = 0.7  ## 1.0 = dots only in shadows (keeps track clear).
+@export_range(0.0, 1.0) var halftone_shadow_bias: float = 0.9  ## high = dots confined to shading; highlights stay dot-free.
+@export_range(0.0, 0.5) var halftone_floor: float = 0.12      ## Luma below this (the dark void) gets NO dots — keeps the black background clean on the dark scene.
 
 @export_group("Ink Edge Outline")
 @export var outline_on: bool = true
 @export_range(0.0, 1.0) var outline_intensity: float = 0.5     ## How strongly ink darkens edges.
-@export_range(0.5, 4.0) var outline_thickness: float = 1.2     ## Sobel sample spread, in pixels.
+@export_range(0.5, 4.0) var outline_thickness: float = 1.4     ## Sobel sample spread, in pixels (bold ink lines).
 @export_range(0.0, 1.0) var outline_threshold: float = 0.18    ## Ignore edge response below this (denoise).
 @export var outline_color: Color = Color(0.02, 0.02, 0.04)     ## Ink colour (near-black, cool tint).
 
@@ -57,6 +58,16 @@ const SHADER_PATH := "res://shaders/comic_post_fx.gdshader"
 @export_range(0.0, 1.0) var aberration_intensity: float = 0.25 ## Master strength of the RGB split.
 @export_range(0.0, 8.0) var aberration_amount: float = 1.6     ## Max channel offset at screen edge, in pixels.
 @export_range(0.5, 4.0) var aberration_edge_falloff: float = 2.0 ## >1 keeps centre clean, splits edges only.
+
+@export_group("Speed Lines")
+@export var speed_lines_on: bool = true
+@export_range(0.0, 1.0) var speed_lines_intensity: float = 0.0  ## Driver-controlled by speed; 0 = invisible at rest.
+@export_range(4.0, 64.0) var speed_lines_count: float = 24.0    ## Number of radial streak directions.
+@export_range(0.0, 1.0) var speed_lines_length: float = 0.6     ## How far from screen centre the streaks reach.
+@export_range(0.0, 0.5) var speed_lines_width: float = 0.04     ## Angular width of each streak.
+@export var speed_lines_color: Color = Color(1, 1, 1)           ## Streak colour (blends additively).
+@export_range(0.0, 12.0) var speed_lines_speed: float = 2.5    ## How fast streaks regenerate / drift outward (animation).
+@export_range(0.0, 1.0) var speed_lines_density: float = 0.5   ## Fraction of spokes lit at once (lower = sparser / more random).
 
 var _rect: ColorRect
 var _mat: ShaderMaterial
@@ -112,6 +123,7 @@ func _push_all() -> void:
 	_mat.set_shader_parameter("halftone_angle", halftone_angle)
 	_mat.set_shader_parameter("halftone_color", halftone_color)
 	_mat.set_shader_parameter("halftone_shadow_bias", halftone_shadow_bias)
+	_mat.set_shader_parameter("halftone_floor", halftone_floor)
 
 	_mat.set_shader_parameter("outline_intensity", outline_intensity if outline_on else 0.0)
 	_mat.set_shader_parameter("outline_thickness", outline_thickness)
@@ -121,3 +133,11 @@ func _push_all() -> void:
 	_mat.set_shader_parameter("aberration_intensity", aberration_intensity if aberration_on else 0.0)
 	_mat.set_shader_parameter("aberration_amount", aberration_amount)
 	_mat.set_shader_parameter("aberration_edge_falloff", aberration_edge_falloff)
+
+	_mat.set_shader_parameter("speed_lines_intensity", speed_lines_intensity if speed_lines_on else 0.0)
+	_mat.set_shader_parameter("speed_lines_count", speed_lines_count)
+	_mat.set_shader_parameter("speed_lines_length", speed_lines_length)
+	_mat.set_shader_parameter("speed_lines_width", speed_lines_width)
+	_mat.set_shader_parameter("speed_lines_color", speed_lines_color)
+	_mat.set_shader_parameter("speed_lines_speed", speed_lines_speed)
+	_mat.set_shader_parameter("speed_lines_density", speed_lines_density)

@@ -128,7 +128,7 @@ script = ExtResource("3_debug_overlay")
 vehicle_path = NodePath("../../Vehicle")
 """
 
-with open("/Users/abdul/Desktop/flowstate/flowstate/scenes/tests/Test_WallRiding.tscn", "w") as f:
+with open("/Users/abdul/Desktop/Personal/flowstate/flowstate/scenes/tests/Test_WallRiding.tscn", "w") as f:
     f.write(tscn)
 
 print("Test_WallRiding.tscn generated successfully!")

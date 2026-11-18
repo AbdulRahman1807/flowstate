@@ -7,7 +7,7 @@ extends SceneTree
 #   C. no wall in range -> no save
 #   D. already wall-riding -> no save
 #   E. integration: dead head-on + wall_attach through apply_intent (ride rejects >0.99) -> save fires
-# Run: Godot --headless --path /Users/abdul/Desktop/flowstate/flowstate --script res://scripts/tests/_WallSaveProbe.gd
+# Run: Godot --headless --path /Users/abdul/Desktop/Personal/flowstate/flowstate --script res://scripts/tests/_WallSaveProbe.gd
 
 var _v: CharacterBody3D
 var _vc

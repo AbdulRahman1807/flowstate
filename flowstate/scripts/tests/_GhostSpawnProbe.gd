@@ -4,7 +4,7 @@ extends SceneTree
 # camera/VFX stripped, collision neutralised, controller replaying) and simulates without error.
 # Drives the RunManager state machine directly: begin -> record a few frames -> finish (captures a
 # best) -> restart (spawns the ghost of that best). Run:
-# Godot --headless --path /Users/abdul/Desktop/flowstate/flowstate --script res://scripts/tests/_GhostSpawnProbe.gd
+# Godot --headless --path /Users/abdul/Desktop/Personal/flowstate/flowstate --script res://scripts/tests/_GhostSpawnProbe.gd
 
 var _scene: Node
 var _rm

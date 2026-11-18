@@ -12,7 +12,7 @@ extends SceneTree
 # each other) so the parked player can't deflect the ghost at the end of its run.
 # Delta is 0 on the first physics tick, so both phases run only AFTER a short warm-up (constant
 # delta) — otherwise frame-0 would integrate differently between record and replay.
-# Run: Godot --headless --path /Users/abdul/Desktop/flowstate/flowstate --script res://scripts/tests/_ReplayProbe.gd
+# Run: Godot --headless --path /Users/abdul/Desktop/Personal/flowstate/flowstate --script res://scripts/tests/_ReplayProbe.gd
 
 const N := 90
 const WARMUP := 3

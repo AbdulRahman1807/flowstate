@@ -8,7 +8,7 @@ extends SceneTree
 #       loss / no airborne-clip before the jump), and
 #   (2) after jumping in it still inverts and rides over the top (loop is not broken by the cut).
 # Run:
-# Godot --headless --path /Users/abdul/Desktop/flowstate/flowstate --script res://scripts/tests/_LoopClearanceProbe.gd
+# Godot --headless --path /Users/abdul/Desktop/Personal/flowstate/flowstate --script res://scripts/tests/_LoopClearanceProbe.gd
 
 const R := 13.0
 const N := 56
